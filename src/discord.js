@@ -12,6 +12,7 @@ const { addShot, clearPreset, listPresets } = require('./scenes')
 const { runDiagnostics } = require('./diagnostics')
 const { createGrowthManager } = require('./growth')
 const { createFinanceManager } = require('./finance')
+const { createVideoManager } = require('./video')
 
 const PRESET_CHOICES = [
   { name: 'Full Advertisement', value: 'full-ad' },
@@ -37,8 +38,8 @@ function commandDefinition() {
     .addSubcommand(sub => sub.setName('stop').setDescription('Disconnect ESN CAM from Minecraft'))
     .addSubcommand(sub => sub.setName('switch-account').setDescription('Clear cached Microsoft login and sign in with a different account'))
     .addSubcommand(sub => sub.setName('status').setDescription('Show ESN CAM status'))
-    .addSubcommand(sub => sub.setName('diagnostics').setDescription('Check Raven recording support'))
-    .addSubcommand(sub => sub.setName('network-test').setDescription('Test Raven connection to the ESN SMP Bedrock listener'))
+    .addSubcommand(sub => sub.setName('diagnostics').setDescription('Check host recording support'))
+    .addSubcommand(sub => sub.setName('network-test').setDescription('Test host connection to the ESN SMP Bedrock listener'))
     .addSubcommand(sub => sub.setName('presets').setDescription('List recording presets and shot counts'))
     .addSubcommand(sub => addPresetOption(
       sub.setName('record').setDescription('Record an advertisement preset')
@@ -100,18 +101,20 @@ async function createDiscordController(config, camera, recorder, fullConfig) {
   const client = new Client({ intents: [GatewayIntentBits.Guilds] })
   const growth = createGrowthManager(fullConfig.growth, recorder)
   const finance = createFinanceManager(fullConfig.finance, config)
+  const video = createVideoManager(fullConfig.cinematic)
 
   client.once('clientReady', async () => {
     const definition = commandDefinition().toJSON()
     const growthDefinition = growth.commandDefinition().toJSON()
     const financeDefinition = finance.commandDefinition().toJSON()
+    const videoDefinition = video.commandDefinition().toJSON()
     if (config.guildId) {
       const guild = await client.guilds.fetch(config.guildId)
-      await guild.commands.set([definition, growthDefinition, financeDefinition])
-      console.log(`ESN Operator ready as ${client.user.tag}; /cam + /growth + /esn registered in ${guild.name}`)
+      await guild.commands.set([definition, growthDefinition, financeDefinition, videoDefinition])
+      console.log(`ESN Operator ready as ${client.user.tag}; /cam + /growth + /esn + /video registered in ${guild.name}`)
     } else {
-      await client.application.commands.set([definition, growthDefinition, financeDefinition])
-      console.log(`ESN Operator ready as ${client.user.tag}; /cam + /growth + /esn registered globally`)
+      await client.application.commands.set([definition, growthDefinition, financeDefinition, videoDefinition])
+      console.log(`ESN Operator ready as ${client.user.tag}; /cam + /growth + /esn + /video registered globally`)
     }
     growth.start(client)
   })
@@ -153,6 +156,21 @@ async function createDiscordController(config, camera, recorder, fullConfig) {
       return
     }
 
+    if (interaction.commandName === 'video') {
+      if (!isAuthorized(interaction, config)) {
+        await interaction.reply({ content: 'You are not authorized to control ESN Cinematic AI.', ephemeral: true })
+        return
+      }
+
+      try {
+        await video.handle(interaction)
+      } catch (error) {
+        console.error(error)
+        await safeReply(interaction, { content: `ESN Video error: ${error.message}`, ephemeral: true })
+      }
+      return
+    }
+
     if (interaction.commandName !== 'cam') return
 
     if (!isAuthorized(interaction, config)) {
@@ -168,7 +186,7 @@ async function createDiscordController(config, camera, recorder, fullConfig) {
         if (!camera.config.port) camera.config.port = 17429
         await camera.start(async data => {
           const url = data.verification_uri || data.verification_uri_complete || 'https://www.microsoft.com/link'
-          const code = data.user_code || data.code || 'Check the Raven console'
+          const code = data.user_code || data.code || 'Check the host console'
           await interaction.followUp({
             content: `**Microsoft login required**\nOpen: ${url}\nCode: **${code}**\nAfter you approve it, ESN CAM will continue connecting automatically.`,
             ephemeral: true
@@ -197,7 +215,7 @@ async function createDiscordController(config, camera, recorder, fullConfig) {
         if (!camera.config.port) camera.config.port = 17429
         await camera.start(async data => {
           const url = data.verification_uri || data.verification_uri_complete || 'https://www.microsoft.com/link'
-          const code = data.user_code || data.code || 'Check the Raven console'
+          const code = data.user_code || data.code || 'Check the host console'
           await interaction.followUp({
             content: `**Choose the Microsoft account with your Bedrock/Xbox profile**\nOpen: ${url}\nCode: **${code}**\nSign in with the correct Microsoft account. ESN CAM will reconnect to ESN SMP automatically after approval.`,
             ephemeral: true
@@ -259,7 +277,7 @@ async function createDiscordController(config, camera, recorder, fullConfig) {
           content:
             `**Minecraft edition:** ${d.edition}\n` +
             `**Bedrock protocol:** ${statusLine(d.bedrockProtocol)}\n` +
-            `**Raven video renderer ready:** ${statusLine(d.rendererReady)}\n` +
+            `**Host video renderer ready:** ${statusLine(d.rendererReady)}\n` +
             `Node: ${d.node}\n` +
             `FFmpeg: ${statusLine(d.ffmpeg)}\n` +
             `node-canvas-webgl: ${statusLine(d.nodeCanvasWebgl)}\n` +
