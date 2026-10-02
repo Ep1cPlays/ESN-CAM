@@ -48,6 +48,13 @@ module.exports = {
     profilesFolder: path.join(__dirname, '..', 'auth'),
     reconnectSeconds: optionalInt('MC_RECONNECT_SECONDS', 10)
   },
+  java: {
+    host: process.env.MC_JAVA_HOST?.trim() || process.env.MC_HOST?.trim() || 'esn.ggwp.cc',
+    port: optionalInt('MC_JAVA_PORT', undefined),
+    username: process.env.MC_JAVA_USERNAME?.trim() || 'ESN-JAVA-CAM',
+    version: process.env.MC_JAVA_VERSION?.trim() || undefined,
+    profilesFolder: path.join(__dirname, '..', 'auth-java')
+  },
   recording: {
     width: optionalInt('RECORD_WIDTH', 1080),
     height: optionalInt('RECORD_HEIGHT', 1920),

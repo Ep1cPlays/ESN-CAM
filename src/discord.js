@@ -13,6 +13,7 @@ const { runDiagnostics } = require('./diagnostics')
 const { createGrowthManager } = require('./growth')
 const { createFinanceManager } = require('./finance')
 const { createVideoManager } = require('./video')
+const { testJavaAccess } = require('./java')
 
 const PRESET_CHOICES = [
   { name: 'Full Advertisement', value: 'full-ad' },
@@ -40,6 +41,7 @@ function commandDefinition() {
     .addSubcommand(sub => sub.setName('status').setDescription('Show ESN CAM status'))
     .addSubcommand(sub => sub.setName('diagnostics').setDescription('Check host recording support'))
     .addSubcommand(sub => sub.setName('network-test').setDescription('Test host connection to the ESN SMP Bedrock listener'))
+    .addSubcommand(sub => sub.setName('java-test').setDescription('Verify Java entitlement and join ESN SMP with Microsoft login'))
     .addSubcommand(sub => sub.setName('presets').setDescription('List recording presets and shot counts'))
     .addSubcommand(sub => addPresetOption(
       sub.setName('record').setDescription('Record an advertisement preset')
@@ -241,6 +243,33 @@ async function createDiscordController(config, camera, recorder, fullConfig) {
             (mc.lastError ? `\n**Last error:** ${mc.lastError}` : ''),
           ephemeral: true
         })
+        return
+      }
+
+      if (sub === 'java-test') {
+        await interaction.deferReply({ ephemeral: true })
+        await interaction.editReply('Starting the **Minecraft Java** entitlement test. If Microsoft asks for authorization, I will send the code here.')
+
+        const result = await testJavaAccess(fullConfig.java, async data => {
+          const url = data.verification_uri || data.verification_uri_complete || 'https://www.microsoft.com/link'
+          const code = data.user_code || data.code || 'Check the host console'
+          await interaction.followUp({
+            content:
+              '**Java Microsoft login required**\n' +
+              'Open: ' + url + '\n' +
+              'Code: **' + code + '**\n' +
+              'Sign in with the Microsoft account that has Game Pass Premium.',
+            ephemeral: true
+          }).catch(() => {})
+        })
+
+        await interaction.editReply(
+          '**JAVA ACCESS CONFIRMED**\n' +
+          'Account: **' + (result.username || 'authenticated') + '**\n' +
+          'Minecraft version: **' + (result.version || 'auto') + '**\n' +
+          'Server: **' + result.host + ':' + result.port + '**\n\n' +
+          'This account can be used for the Java recording side of ESN Operator.'
+        )
         return
       }
 
