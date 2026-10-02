@@ -42,7 +42,7 @@ module.exports = {
   minecraft: {
     edition: 'bedrock',
     host: process.env.MC_HOST?.trim() || 'esn.ggwp.cc',
-    port: optionalInt('MC_PORT', 17769),
+    port: optionalInt('MC_PORT', 17429),
     username: process.env.MC_USERNAME?.trim() || undefined,
     version: process.env.MC_VERSION?.trim() || undefined,
     profilesFolder: path.join(__dirname, '..', 'auth'),
