@@ -24,8 +24,12 @@ async function testJavaAccess(config, onMsaCode, onStage) {
 
     const profile = result?.profile
     const items = result?.entitlements?.items || []
+    // Safe diagnostics: never log the access token or raw auth response.
+    stage('MINECRAFT_TOKEN', result?.token ? 'received' : 'missing')
+    stage('ENTITLEMENTS_RESPONSE', result?.entitlements ? `received (${items.length} item(s))` : 'missing')
+    stage('PROFILE_RESPONSE', profile ? `received (${profile.name || 'unnamed'})` : 'missing')
     if (!profile || profile.error) {
-      const error = new Error('Microsoft authentication succeeded, but no Minecraft Java profile was returned.')
+      const error = new Error('Microsoft/Xbox authentication succeeded, but Minecraft Services did not return a Java profile. Token/entitlement/profile diagnostics were logged above.')
       error.authStage = 'JAVA_PROFILE'
       throw error
     }
