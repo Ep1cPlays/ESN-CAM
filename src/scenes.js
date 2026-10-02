@@ -3,7 +3,7 @@
 const fs = require('node:fs')
 const path = require('node:path')
 
-const sceneFile = path.join(process.cwd(), 'config', 'scenes.json')
+const sceneFile = path.join(__dirname, '..', 'config', 'scenes.json')
 
 function loadSceneConfig() {
   if (!fs.existsSync(sceneFile)) {
