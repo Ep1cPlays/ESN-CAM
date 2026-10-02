@@ -1,10 +1,55 @@
 'use strict'
 
 const { EventEmitter } = require('node:events')
+const dns = require('node:dns')
+const net = require('node:net')
 const bedrock = require('bedrock-protocol')
 
 const wait = ms => new Promise(resolve => setTimeout(resolve, ms))
 const ZERO_UUID = '00000000-0000-0000-0000-000000000000'
+
+
+async function resolveHost(host) {
+  if (net.isIP(host)) return host
+
+  const systemLookup = () => new Promise((resolve, reject) => {
+    dns.lookup(host, { family: 4 }, (error, address) => {
+      if (error) reject(error)
+      else resolve(address)
+    })
+  })
+
+  const publicLookup = () => new Promise((resolve, reject) => {
+    const resolver = new dns.Resolver()
+    resolver.setServers(['1.1.1.1', '8.8.8.8'])
+    resolver.resolve4(host, (error, addresses) => {
+      if (error) reject(error)
+      else if (!addresses?.length) reject(new Error('No IPv4 address returned'))
+      else resolve(addresses[0])
+    })
+  })
+
+  let lastError
+  for (let attempt = 1; attempt <= 6; attempt++) {
+    try {
+      return await systemLookup()
+    } catch (error) {
+      lastError = error
+    }
+
+    try {
+      return await publicLookup()
+    } catch (error) {
+      lastError = error
+    }
+
+    await wait(1500)
+  }
+
+  const error = new Error(`Could not resolve ${host} after multiple attempts: ${lastError?.code || lastError?.message || 'DNS failure'}`)
+  error.code = lastError?.code || 'DNS_LOOKUP_FAILED'
+  throw error
+}
 
 function reasonText(reason) {
   if (reason == null) return 'unknown'
@@ -46,8 +91,18 @@ class MinecraftCamera extends EventEmitter {
     this.lastError = null
     if (typeof onMsaCode === 'function') this.lastMsaCallback = onMsaCode
 
+    let resolvedHost
+    try {
+      resolvedHost = await resolveHost(this.config.host)
+    } catch (error) {
+      this.state = 'offline'
+      this.lastError = error.message
+      this.emit('warning', this.lastError)
+      throw error
+    }
+
     const options = {
-      host: this.config.host,
+      host: resolvedHost,
       port: this.config.port || 19132,
       username: this.config.username,
       profilesFolder: this.config.profilesFolder,
