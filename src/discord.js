@@ -13,7 +13,7 @@ const { runDiagnostics } = require('./diagnostics')
 const { createGrowthManager } = require('./growth')
 const { createFinanceManager } = require('./finance')
 const { createVideoManager } = require('./video')
-const { testJavaAccess } = require('./java')
+const { testJavaAccess, testJavaConnection } = require('./java')
 
 const PRESET_CHOICES = [
   { name: 'Full Advertisement', value: 'full-ad' },
@@ -41,7 +41,7 @@ function commandDefinition() {
     .addSubcommand(sub => sub.setName('status').setDescription('Show ESN CAM status'))
     .addSubcommand(sub => sub.setName('diagnostics').setDescription('Check host recording support'))
     .addSubcommand(sub => sub.setName('network-test').setDescription('Test host connection to the ESN SMP Bedrock listener'))
-    .addSubcommand(sub => sub.setName('java-test').setDescription('Verify Java entitlement and join ESN SMP with Microsoft login'))
+    .addSubcommand(sub => sub.setName('java-test').setDescription('Verify Java entitlement with Microsoft login'))\n    .addSubcommand(sub => sub.setName('java-connect').setDescription('Test Java 26.2 login and spawn on ESN SMP'))
     .addSubcommand(sub => sub.setName('presets').setDescription('List recording presets and shot counts'))
     .addSubcommand(sub => addPresetOption(
       sub.setName('record').setDescription('Record an advertisement preset')
@@ -269,6 +269,29 @@ async function createDiscordController(config, camera, recorder, fullConfig) {
           'Minecraft version: **' + (result.version || 'auto') + '**\n' +
           'Server: **' + result.host + ':' + result.port + '**\n\n' +
           'This account can be used for the Java recording side of ESN Operator.'
+        )
+        return
+      }
+
+      if (sub === 'java-connect') {
+        await interaction.deferReply({ ephemeral: true })
+        await interaction.editReply('Connecting the Java CAM to **ESN SMP 26.2** now. If Microsoft asks for authorization, I will send the code here.')
+
+        const result = await testJavaConnection(fullConfig.java, async data => {
+          const url = data.verification_uri || data.verification_uri_complete || 'https://www.microsoft.com/link'
+          const code = data.user_code || data.code || 'Check the host console'
+          await interaction.followUp({
+            content: '**Java Microsoft login required**\\nOpen: ' + url + '\\nCode: **' + code + '**',
+            ephemeral: true
+          }).catch(() => {})
+        })
+
+        const pos = result.position ? `\\nSpawned at: **${result.position.x}, ${result.position.y}, ${result.position.z}**` : ''
+        await interaction.editReply(
+          '**JAVA 26.2 CONNECTION: PASS**\\n' +
+          'Account: **' + result.username + '**\\n' +
+          'Version: **' + result.version + '**\\n' +
+          'Server: **' + result.host + ':' + result.port + '**' + pos
         )
         return
       }
