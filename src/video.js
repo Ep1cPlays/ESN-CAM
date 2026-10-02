@@ -246,6 +246,153 @@ function escapeDrawtext(value) {
     .replace(/%/g, '\\%')
 }
 
+function ffmpegHasFilter(name) {
+  const result = spawnSync('ffmpeg', ['-hide_banner', '-filters'], { encoding: 'utf8' })
+  return result.status === 0 && new RegExp('\\b' + name + '\\b').test(String(result.stdout || '') + String(result.stderr || ''))
+}
+
+function cpuVideoDimensions(format) {
+  if (format === '16:9') return { width: 960, height: 540 }
+  if (format === '1:1') return { width: 640, height: 640 }
+  return { width: 540, height: 960 }
+}
+
+function shortHeadline(prompt, fallback = 'ES NETWORK') {
+  const cleaned = String(prompt || '')
+    .replace(/https?:\/\/\S+/gi, '')
+    .replace(/[^a-z0-9 &+_.!?'/-]/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+  if (!cleaned) return fallback
+  const first = cleaned.split(/[.!?]/)[0].trim()
+  return (first || cleaned).slice(0, 58).toUpperCase()
+}
+
+function cpuPalette(style) {
+  const palettes = {
+    'dark-epic': { bg: '0x07070b', accent: '0x9b1c31' },
+    'high-energy': { bg: '0x0b0710', accent: '0xd13b3b' },
+    'clean-tech': { bg: '0x061015', accent: '0x1b8ea6' },
+    'minecraft-trailer': { bg: '0x071008', accent: '0x3f8f4c' },
+    'esn-cinematic': { bg: '0x05070c', accent: '0x3867d6' }
+  }
+  return palettes[style] || palettes['esn-cinematic']
+}
+
+function cpuCinematic(prompt, format, seconds, style, config, title = 'ES NETWORK') {
+  if (!ffmpegExists()) throw new Error('FFmpeg is required for CPU cinematic mode.')
+
+  const duration = Math.max(4, Math.min(Number(seconds) || 8, 30))
+  const { width, height } = cpuVideoDimensions(format)
+  const palette = cpuPalette(style)
+  const headline = shortHeadline(prompt, title)
+  const jobId = 'cpu-' + Date.now().toString(36)
+  const dir = path.resolve(config.outputDir, jobId)
+  const output = path.join(dir, 'ESN-CPU-cinematic.mp4')
+  ensureDir(dir)
+
+  const filters = [
+    'noise=alls=7:allf=t',
+    'eq=contrast=1.12:saturation=1.08:brightness=-0.025',
+    'vignette=PI/5',
+    'drawbox=x=0:y=h*0.15:w=w:h=2:color=' + palette.accent + '@0.55:t=fill',
+    'drawbox=x=0:y=h*0.85:w=w:h=2:color=' + palette.accent + '@0.45:t=fill',
+    'fade=t=in:st=0:d=0.45',
+    'fade=t=out:st=' + Math.max(0.1, duration - 0.6).toFixed(2) + ':d=0.6'
+  ]
+
+  if (ffmpegHasFilter('drawtext')) {
+    const mainSize = Math.max(30, Math.round(width / 14))
+    const smallSize = Math.max(20, Math.round(width / 28))
+    const finalStart = Math.max(2, duration * 0.72).toFixed(2)
+    filters.push(
+      "drawtext=text='" + escapeDrawtext(title) + "':fontcolor=white:fontsize=" + mainSize +
+      ":x=(w-text_w)/2:y=h*0.17:enable='between(t,0," + (duration * 0.34).toFixed(2) + ")'",
+      "drawtext=text='" + escapeDrawtext(headline) + "':fontcolor=white:fontsize=" + smallSize +
+      ":x=(w-text_w)/2:y=(h-text_h)/2:box=1:boxcolor=black@0.35:boxborderw=18:enable='between(t," +
+      (duration * 0.22).toFixed(2) + "," + (duration * 0.76).toFixed(2) + ")'",
+      "drawtext=text='ES NETWORK':fontcolor=white:fontsize=" + mainSize +
+      ":x=(w-text_w)/2:y=h*0.40:enable='gte(t," + finalStart + ")'",
+      "drawtext=text='" + escapeDrawtext(config.websiteUrl) + "':fontcolor=white:fontsize=" + smallSize +
+      ":x=(w-text_w)/2:y=h*0.55:enable='gte(t," + finalStart + ")'"
+    )
+  }
+
+  const result = spawnSync('ffmpeg', [
+    '-y',
+    '-f', 'lavfi',
+    '-i', 'color=c=' + palette.bg + ':s=' + width + 'x' + height + ':r=24:d=' + duration,
+    '-vf', filters.join(','),
+    '-an',
+    '-c:v', 'libx264',
+    '-preset', 'ultrafast',
+    '-crf', '24',
+    '-pix_fmt', 'yuv420p',
+    '-movflags', '+faststart',
+    output
+  ], { encoding: 'utf8', maxBuffer: 8 * 1024 * 1024 })
+
+  if (result.status !== 0 || !fs.existsSync(output)) {
+    throw new Error('CPU cinematic render failed: ' + String(result.stderr || '').slice(-900))
+  }
+
+  return { id: jobId, output, backend: 'CPU Cinematic Lite' }
+}
+
+async function cpuAnimateImage(attachment, prompt, format, seconds, style, config) {
+  if (!ffmpegExists()) throw new Error('FFmpeg is required for CPU image animation.')
+
+  const duration = Math.max(4, Math.min(Number(seconds) || 8, 30))
+  const { width, height } = cpuVideoDimensions(format)
+  const jobId = 'cpu-image-' + Date.now().toString(36)
+  const dir = path.resolve(config.outputDir, jobId)
+  ensureDir(dir)
+
+  const ext = path.extname(attachment.name || '').toLowerCase()
+  if (!['.png', '.jpg', '.jpeg', '.webp'].includes(ext)) throw new Error('Use a PNG, JPG, JPEG, or WebP image.')
+
+  const input = path.join(dir, 'source' + ext)
+  const output = path.join(dir, 'ESN-image-cinematic.mp4')
+  await downloadAttachment(attachment, input, config.maxSourceBytes)
+
+  const filters = [
+    'scale=' + width + ':' + height + ':force_original_aspect_ratio=increase',
+    'crop=' + width + ':' + height,
+    "zoompan=z='min(zoom+0.0012,1.14)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=1:s=" + width + 'x' + height + ':fps=24',
+    'eq=contrast=1.08:saturation=1.1:brightness=-0.015',
+    'vignette=PI/5',
+    'fade=t=in:st=0:d=0.45',
+    'fade=t=out:st=' + Math.max(0.1, duration - 0.6).toFixed(2) + ':d=0.6'
+  ]
+
+  if (ffmpegHasFilter('drawtext')) {
+    filters.push(
+      "drawtext=text='" + escapeDrawtext(shortHeadline(prompt, 'ES NETWORK')) + "':fontcolor=white:fontsize=" +
+      Math.max(22, Math.round(width / 24)) +
+      ":x=(w-text_w)/2:y=h*0.82:box=1:boxcolor=black@0.35:boxborderw=14"
+    )
+  }
+
+  const result = spawnSync('ffmpeg', [
+    '-y', '-loop', '1', '-i', input,
+    '-vf', filters.join(','),
+    '-t', String(duration),
+    '-an',
+    '-c:v', 'libx264',
+    '-preset', 'ultrafast',
+    '-crf', '23',
+    '-pix_fmt', 'yuv420p',
+    '-movflags', '+faststart',
+    output
+  ], { encoding: 'utf8', maxBuffer: 8 * 1024 * 1024 })
+
+  if (result.status !== 0 || !fs.existsSync(output)) {
+    throw new Error('CPU image animation failed: ' + String(result.stderr || '').slice(-900))
+  }
+
+  return { id: jobId, output, backend: 'CPU Image Cinematic' }
+}
+
 async function downloadAttachment(attachment, outputPath, maxBytes) {
   if (attachment.size > maxBytes) throw new Error('Source video is larger than the configured free-edit limit.')
   const response = await fetch(attachment.url, { signal: AbortSignal.timeout(30000) })
@@ -308,6 +455,7 @@ function createVideoManager(config) {
     const seconds = interaction.options.getInteger('seconds') || config.defaultSeconds
     const quality = interaction.options.getString('quality') || config.defaultQuality
     const style = interaction.options.getString('style') || 'esn-cinematic'
+    const presetTitle = PRESETS[presetName]?.title || (presetName === 'product' ? 'ESN PRODUCT' : 'ES NETWORK')
 
     const prompt = [
       customPrompt || PRESETS[presetName]?.prompt || '',
@@ -317,23 +465,43 @@ function createVideoManager(config) {
     ].filter(Boolean).join(' ')
 
     await interaction.deferReply({ ephemeral: true })
-    const job = await worker.submit({
-      prompt,
-      preset: presetName || 'custom',
-      format,
-      seconds,
-      quality,
-      requested_by: interaction.user.id
-    })
 
-    await interaction.editReply(
-      '**ESN Cinematic AI job submitted.**\n' +
-      'Job: ' + job.id + '\n' +
-      'Format: **' + format + '**\n' +
-      'Length: **' + seconds + ' sec**\n' +
-      'Quality: **' + quality + '**\n\n' +
-      'Use /video job with ID ' + job.id + ' to check it.'
-    )
+    try {
+      const job = await worker.submit({
+        prompt,
+        preset: presetName || 'custom',
+        format,
+        seconds,
+        quality,
+        requested_by: interaction.user.id
+      })
+
+      await interaction.editReply(
+        '**ESN Cinematic AI job submitted.**\n' +
+        'Job: ' + job.id + '\n' +
+        'Format: **' + format + '**\n' +
+        'Length: **' + seconds + ' sec**\n' +
+        'Quality: **' + quality + '**\n\n' +
+        'Use /video job with ID ' + job.id + ' to check it.'
+      )
+      return
+    } catch (workerError) {
+      const result = cpuCinematic(customPrompt || prompt, format, seconds, style, config, presetTitle)
+      const size = fs.statSync(result.output).size
+      if (size <= config.discordAttachmentBytes) {
+        await interaction.editReply({
+          content:
+            '**CPU cinematic complete.**\n' +
+            'The GPU worker was unavailable, so ESN automatically rendered this on the current host with the CPU cinematic engine.\n' +
+            'Backend: **' + result.backend + '**',
+          files: [new AttachmentBuilder(result.output)]
+        })
+      } else {
+        await interaction.editReply(
+          'CPU cinematic completed at ' + result.output + ', but it is too large to attach to Discord.'
+        )
+      }
+    }
   }
 
   async function handle(interaction) {
@@ -341,16 +509,26 @@ function createVideoManager(config) {
 
     if (sub === 'status') {
       await interaction.deferReply({ ephemeral: true })
-      const status = await worker.health()
-      await interaction.editReply(
-        '**ESN Cinematic AI**\n' +
-        'Worker: **ONLINE**\n' +
-        'Backend: **' + (status.backend || 'LTX') + '**\n' +
-        'GPU: **' + (status.gpu || 'unknown') + '**\n' +
-        'Queue: **' + (status.queued ?? 0) + '**\n' +
-        'Running: **' + (status.running ?? 0) + '**\n' +
-        'ESN LoRA: **' + (status.esn_lora ? 'LOADED' : 'not configured') + '**'
-      )
+      try {
+        const status = await worker.health()
+        await interaction.editReply(
+          '**ESN Cinematic AI**\n' +
+          'GPU worker: **ONLINE**\n' +
+          'Backend: **' + (status.backend || 'LTX') + '**\n' +
+          'GPU: **' + (status.gpu || 'unknown') + '**\n' +
+          'Queue: **' + (status.queued ?? 0) + '**\n' +
+          'Running: **' + (status.running ?? 0) + '**\n' +
+          'ESN LoRA: **' + (status.esn_lora ? 'LOADED' : 'not configured') + '**\n' +
+          'CPU fallback: **' + (ffmpegExists() ? 'READY' : 'FFmpeg missing') + '**'
+        )
+      } catch {
+        await interaction.editReply(
+          '**ESN Cinematic Studio**\n' +
+          'GPU worker: **OFFLINE / NOT CONNECTED**\n' +
+          'CPU cinematic fallback: **' + (ffmpegExists() ? 'READY' : 'FFmpeg missing') + '**\n' +
+          'Text/preset/product cinematics automatically use the current host when the GPU worker is unavailable.'
+        )
+      }
       return
     }
 
@@ -374,24 +552,38 @@ function createVideoManager(config) {
       const style = interaction.options.getString('style') || 'esn-cinematic'
 
       await interaction.deferReply({ ephemeral: true })
-      const asset = await worker.uploadAsset(attachment)
       const prompt = [
         userPrompt,
         stylePrompt(style),
         brandPrompt(config),
         'Preserve the recognizable subject and composition from the reference image while creating convincing cinematic motion.'
       ].join(' ')
-      const job = await worker.submit({
-        prompt,
-        preset: 'image-animation',
-        mode: 'image',
-        asset_id: asset.id,
-        format,
-        seconds,
-        quality,
-        requested_by: interaction.user.id
-      })
-      await interaction.editReply('**Image-to-video submitted.**\nJob: ' + job.id + '\nUse /video job with ID ' + job.id + ' to check it.')
+
+      try {
+        const asset = await worker.uploadAsset(attachment)
+        const job = await worker.submit({
+          prompt,
+          preset: 'image-animation',
+          mode: 'image',
+          asset_id: asset.id,
+          format,
+          seconds,
+          quality,
+          requested_by: interaction.user.id
+        })
+        await interaction.editReply('**Image-to-video submitted.**\nJob: ' + job.id + '\nUse /video job with ID ' + job.id + ' to check it.')
+      } catch {
+        const result = await cpuAnimateImage(attachment, userPrompt, format, seconds, style, config)
+        const size = fs.statSync(result.output).size
+        if (size <= config.discordAttachmentBytes) {
+          await interaction.editReply({
+            content: '**CPU image cinematic complete.**\nGPU unavailable, so ESN animated the image locally.',
+            files: [new AttachmentBuilder(result.output)]
+          })
+        } else {
+          await interaction.editReply('CPU image cinematic completed at ' + result.output + ', but it is too large to attach.')
+        }
+      }
       return
     }
 
@@ -401,24 +593,38 @@ function createVideoManager(config) {
       const seconds = interaction.options.getInteger('seconds') || Math.min(12, config.defaultSeconds)
 
       await interaction.deferReply({ ephemeral: true })
-      const asset = await worker.uploadAsset(attachment)
       const prompt = [
         userPrompt,
         stylePrompt('esn-cinematic'),
         brandPrompt(config),
         'Use the uploaded gameplay or CAM footage as motion/context and remake the selected segment with polished cinematic direction.'
       ].join(' ')
-      const job = await worker.submit({
-        prompt,
-        preset: 'cam-retake',
-        mode: 'retake',
-        asset_id: asset.id,
-        format: '16:9',
-        seconds,
-        quality: 'fast',
-        requested_by: interaction.user.id
-      })
-      await interaction.editReply('**AI CAM/gameplay retake submitted.**\nJob: ' + job.id + '\nUse /video job with ID ' + job.id + ' to check it.')
+
+      try {
+        const asset = await worker.uploadAsset(attachment)
+        const job = await worker.submit({
+          prompt,
+          preset: 'cam-retake',
+          mode: 'retake',
+          asset_id: asset.id,
+          format: '16:9',
+          seconds,
+          quality: 'fast',
+          requested_by: interaction.user.id
+        })
+        await interaction.editReply('**AI CAM/gameplay retake submitted.**\nJob: ' + job.id + '\nUse /video job with ID ' + job.id + ' to check it.')
+      } catch {
+        const result = await cinematicFreeEdit(attachment, '16:9', shortHeadline(userPrompt, 'ESN CINEMATIC'), config)
+        const size = fs.statSync(result.output).size
+        if (size <= config.discordAttachmentBytes) {
+          await interaction.editReply({
+            content: '**CPU CAM/gameplay cinematic complete.**\nGPU unavailable, so ESN processed the footage locally.',
+            files: [new AttachmentBuilder(result.output)]
+          })
+        } else {
+          await interaction.editReply('CPU CAM/gameplay cinematic completed at ' + result.output + ', but it is too large to attach.')
+        }
+      }
       return
     }
 
