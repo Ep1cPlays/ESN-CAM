@@ -68,6 +68,10 @@ module.exports = {
     guardianInvite: process.env.ESN_GUARDIAN_INVITE?.trim() || 'https://discord.com/oauth2/authorize?client_id=1544503232674664573',
     smpBedrockPort: optionalInt('MC_PORT', 17429)
   },
+  finance: {
+    dataFile: process.env.ESN_FINANCE_DATA_FILE?.trim() || path.join(__dirname, '..', 'data', 'finance.json'),
+    maxImportBytes: optionalInt('ESN_FINANCE_IMPORT_MAX_BYTES', 5 * 1024 * 1024)
+  },
   viewer: {
     enabled: optionalBool('VIEWER_ENABLED', false),
     port: optionalInt('VIEWER_PORT', 3000)
