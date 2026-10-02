@@ -1,13 +1,13 @@
 {
   "name": "esn-cam",
-  "version": "2.1.0",
+  "version": "2.2.0",
   "private": true,
-  "description": "ESN Discord growth, sales and Minecraft Bedrock cinematography bot",
+  "description": "ESN Operator with growth, finance, sales and Minecraft Bedrock cinematography",
   "main": "src/index.js",
   "type": "commonjs",
   "scripts": {
     "start": "node src/index.js",
-    "check": "node --check src/index.js && node --check src/config.js && node --check src/minecraft.js && node --check src/scenes.js && node --check src/recorder.js && node --check src/discord.js && node --check src/diagnostics.js && node --check src/growth.js",
+    "check": "node --check src/index.js && node --check src/config.js && node --check src/minecraft.js && node --check src/scenes.js && node --check src/recorder.js && node --check src/discord.js && node --check src/diagnostics.js && node --check src/growth.js && node --check src/finance.js",
     "test": "npm run check"
   },
   "engines": {
