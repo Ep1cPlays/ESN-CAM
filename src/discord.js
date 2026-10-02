@@ -33,6 +33,7 @@ function commandDefinition() {
     .setDescription('Control ESN CAM')
     .addSubcommand(sub => sub.setName('start').setDescription('Connect ESN CAM to ESN SMP'))
     .addSubcommand(sub => sub.setName('stop').setDescription('Disconnect ESN CAM from Minecraft'))
+    .addSubcommand(sub => sub.setName('switch-account').setDescription('Clear cached Microsoft login and sign in with a different account'))
     .addSubcommand(sub => sub.setName('status').setDescription('Show ESN CAM status'))
     .addSubcommand(sub => sub.setName('diagnostics').setDescription('Check Raven recording support'))
     .addSubcommand(sub => sub.setName('presets').setDescription('List recording presets and shot counts'))
@@ -139,6 +140,28 @@ async function createDiscordController(config, camera, recorder, fullConfig) {
       if (sub === 'stop') {
         await camera.stop()
         await interaction.reply({ content: 'ESN CAM has been disconnected.', ephemeral: true })
+        return
+      }
+
+      if (sub === 'switch-account') {
+        await interaction.deferReply({ ephemeral: true })
+        await camera.stop()
+
+        const authFolder = fullConfig.minecraft.profilesFolder
+        fs.rmSync(authFolder, { recursive: true, force: true })
+        fs.mkdirSync(authFolder, { recursive: true })
+
+        await interaction.editReply('Cached Microsoft login cleared. Starting a fresh Microsoft sign-in now...')
+
+        await camera.start(async data => {
+          const url = data.verification_uri || data.verification_uri_complete || 'https://www.microsoft.com/link'
+          const code = data.user_code || data.code || 'Check the Raven console'
+          await interaction.followUp({
+            content: `**Choose the Microsoft account you want ESN CAM to use**\nOpen: ${url}\nCode: **${code}**\nSign in with the correct Microsoft account. ESN CAM will reconnect automatically after approval.`,
+            ephemeral: true
+          }).catch(() => {})
+        })
+
         return
       }
 
