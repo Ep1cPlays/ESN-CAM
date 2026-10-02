@@ -248,7 +248,7 @@ function escapeDrawtext(value) {
 
 function ffmpegHasFilter(name) {
   const result = spawnSync('ffmpeg', ['-hide_banner', '-filters'], { encoding: 'utf8' })
-  return result.status === 0 && new RegExp('\\\\b' + name + '\\\\b').test(String(result.stdout || '') + String(result.stderr || ''))
+  return result.status === 0 && new RegExp('\\b' + name + '\\b').test(String(result.stdout || '') + String(result.stderr || ''))
 }
 
 function cpuVideoDimensions(format) {
@@ -259,9 +259,9 @@ function cpuVideoDimensions(format) {
 
 function shortHeadline(prompt, fallback = 'ES NETWORK') {
   const cleaned = String(prompt || '')
-    .replace(/https?:\\/\\/\\S+/gi, '')
+    .replace(/https?:\/\/\S+/gi, '')
     .replace(/[^a-z0-9 &+_.!?'/-]/gi, ' ')
-    .replace(/\\s+/g, ' ')
+    .replace(/\s+/g, ' ')
     .trim()
   if (!cleaned) return fallback
   const first = cleaned.split(/[.!?]/)[0].trim()
