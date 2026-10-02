@@ -1,6 +1,6 @@
 {
   "name": "esn-cam",
-  "version": "2.5.7",
+  "version": "2.5.8",
   "private": true,
   "description": "ESN Operator with Bedrock CAM, Java entitlement testing, growth, finance and cinematic tools",
   "main": "index.js",
