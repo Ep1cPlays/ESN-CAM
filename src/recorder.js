@@ -12,6 +12,19 @@ function safeName(value) {
   return String(value).replace(/[^a-z0-9-_]/gi, '-').replace(/-+/g, '-').replace(/^-|-$/g, '') || 'shot'
 }
 
+function escapeDrawtext(value) {
+  return String(value)
+    .replace(/\\/g, '\\\\')
+    .replace(/:/g, '\\:')
+    .replace(/'/g, "\\'")
+    .replace(/%/g, '\\%')
+}
+
+function ffmpegHasDrawtext() {
+  const result = spawnSync('ffmpeg', ['-hide_banner', '-filters'], { encoding: 'utf8' })
+  return result.status === 0 && /\bdrawtext\b/.test(`${result.stdout || ''}${result.stderr || ''}`)
+}
+
 function waitForFile(filePath, timeoutMs) {
   return new Promise((resolve, reject) => {
     const started = Date.now()
@@ -119,9 +132,9 @@ class Recorder {
         clips.push(output)
       }
 
-      const finalOutput = path.join(outputDir, `${safeName(name)}-ESN-SMP.mp4`)
+      const masterOutput = path.join(outputDir, `${safeName(name)}-master.mp4`)
       if (clips.length === 1) {
-        fs.copyFileSync(clips[0], finalOutput)
+        fs.copyFileSync(clips[0], masterOutput)
       } else {
         const concatFile = path.join(outputDir, 'clips.txt')
         fs.writeFileSync(
@@ -134,7 +147,7 @@ class Recorder {
           '-safe', '0',
           '-i', concatFile,
           '-c', 'copy',
-          finalOutput
+          masterOutput
         ], { encoding: 'utf8' })
 
         if (result.status !== 0) {
@@ -142,10 +155,30 @@ class Recorder {
         }
       }
 
+      const finalOutput = path.join(outputDir, `${safeName(name)}-ESN-SMP.mp4`)
+      let overlayApplied = false
+      if (this.config.overlayEnabled && ffmpegHasDrawtext()) {
+        const title = escapeDrawtext(this.config.title)
+        const subtitle = escapeDrawtext(this.config.subtitle)
+        const filter = [
+          `drawtext=text='${title}':fontcolor=white:fontsize=72:x=(w-text_w)/2:y=110:box=1:boxcolor=black@0.55:boxborderw=22`,
+          `drawtext=text='${subtitle}':fontcolor=white:fontsize=42:x=(w-text_w)/2:y=h-190:box=1:boxcolor=black@0.55:boxborderw=18`
+        ].join(',')
+        const overlay = spawnSync('ffmpeg', [
+          '-y', '-i', masterOutput, '-vf', filter,
+          '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '18',
+          '-movflags', '+faststart', finalOutput
+        ], { encoding: 'utf8' })
+        overlayApplied = overlay.status === 0 && fs.existsSync(finalOutput)
+      }
+      if (!overlayApplied) fs.copyFileSync(masterOutput, finalOutput)
+
       this.lastJob = {
         ...this.lastJob,
         state: 'complete',
         finalOutput,
+        masterOutput,
+        overlayApplied,
         completedAt: new Date().toISOString()
       }
       return this.lastJob
