@@ -41,7 +41,7 @@ module.exports = {
   minecraft: {
     host: process.env.MC_HOST?.trim() || 'esn.ggwp.cc',
     port: optionalInt('MC_PORT', undefined),
-    username: required('MC_USERNAME'),
+    username: process.env.MC_USERNAME?.trim() || undefined,
     auth: process.env.MC_AUTH?.trim() || 'microsoft',
     version: process.env.MC_VERSION?.trim() || undefined,
     profilesFolder: 'auth',
