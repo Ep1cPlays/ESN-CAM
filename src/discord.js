@@ -39,9 +39,14 @@ function commandDefinition() {
     .addSubcommand(sub => addPresetOption(
       sub.setName('record').setDescription('Record an advertisement preset')
     ))
-    .addSubcommand(sub => addPresetOption(
+    .addSubcommand(sub =>
       sub.setName('shot-add')
         .setDescription('Save ESN CAM current position as a shot')
+        .addStringOption(option => option
+          .setName('preset')
+          .setDescription('Advertisement preset')
+          .setRequired(true)
+          .addChoices(...PRESET_CHOICES))
         .addStringOption(option => option
           .setName('name')
           .setDescription('Shot name')
@@ -51,8 +56,7 @@ function commandDefinition() {
           .setDescription('Clip length in seconds')
           .setMinValue(1)
           .setMaxValue(30)
-          .setRequired(false))
-    ))
+          .setRequired(false)))
     .addSubcommand(sub => addPresetOption(
       sub.setName('shot-clear').setDescription('Delete every shot in a preset')
     ))
@@ -91,7 +95,7 @@ async function safeReply(interaction, options) {
 async function createDiscordController(config, camera, recorder, fullConfig) {
   const client = new Client({ intents: [GatewayIntentBits.Guilds] })
 
-  client.once('ready', async () => {
+  client.once('clientReady', async () => {
     const definition = commandDefinition().toJSON()
     if (config.guildId) {
       const guild = await client.guilds.fetch(config.guildId)
