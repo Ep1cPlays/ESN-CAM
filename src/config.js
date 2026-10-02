@@ -52,7 +52,10 @@ module.exports = {
     height: optionalInt('RECORD_HEIGHT', 1920),
     fps: optionalInt('RECORD_FPS', 20),
     viewDistance: optionalInt('RECORD_VIEW_DISTANCE', 8),
-    directory: process.env.RECORDINGS_DIR?.trim() || 'recordings'
+    directory: process.env.RECORDINGS_DIR?.trim() || 'recordings',
+    overlayEnabled: optionalBool('AD_OVERLAY_ENABLED', true),
+    title: process.env.AD_TITLE?.trim() || 'ESN SMP',
+    subtitle: process.env.AD_SUBTITLE?.trim() || 'esn.ggwp.cc | JAVA + BEDROCK'
   },
   viewer: {
     enabled: optionalBool('VIEWER_ENABLED', false),
