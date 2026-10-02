@@ -17,7 +17,8 @@ class MinecraftCamera extends EventEmitter {
     this.viewerStarted = false
   }
 
-  async start() {
+  async start(onMsaCode) {
+    if (!this.config.username) throw new Error('MC_USERNAME is not set on Raven.')
     if (this.bot && ['connecting', 'online'].includes(this.state)) return
 
     this.intentionalStop = false
@@ -28,7 +29,11 @@ class MinecraftCamera extends EventEmitter {
       host: this.config.host,
       username: this.config.username,
       auth: this.config.auth,
-      profilesFolder: this.config.profilesFolder
+      profilesFolder: this.config.profilesFolder,
+      onMsaCode: data => {
+        this.emit('msaCode', data)
+        if (typeof onMsaCode === 'function') onMsaCode(data)
+      }
     }
     if (this.config.port) options.port = this.config.port
     if (this.config.version) options.version = this.config.version
