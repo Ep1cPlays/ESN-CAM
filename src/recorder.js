@@ -64,6 +64,10 @@ class Recorder {
   }
 
   assertRendererReady() {
+    if (this.fullConfig.minecraft.edition === 'bedrock') {
+      throw new Error('Bedrock connection is enabled. The old Java/Mineflayer video renderer cannot record a Bedrock client yet. ESN CAM can connect, switch accounts, report status, save shots, and use camera teleport/look controls; Bedrock video rendering is the next upgrade.')
+    }
+
     const diagnostics = this.rendererDiagnostics()
     if (!diagnostics.rendererReady) {
       const missing = []
