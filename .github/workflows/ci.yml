@@ -21,3 +21,4 @@ jobs:
           node --check src/discord.js
           node --check src/diagnostics.js
           node --check src/growth.js
+          node --check src/finance.js

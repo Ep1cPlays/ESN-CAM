@@ -11,6 +11,7 @@ const fs = require('node:fs')
 const { addShot, clearPreset, listPresets } = require('./scenes')
 const { runDiagnostics } = require('./diagnostics')
 const { createGrowthManager } = require('./growth')
+const { createFinanceManager } = require('./finance')
 
 const PRESET_CHOICES = [
   { name: 'Full Advertisement', value: 'full-ad' },
@@ -98,17 +99,19 @@ async function safeReply(interaction, options) {
 async function createDiscordController(config, camera, recorder, fullConfig) {
   const client = new Client({ intents: [GatewayIntentBits.Guilds] })
   const growth = createGrowthManager(fullConfig.growth, recorder)
+  const finance = createFinanceManager(fullConfig.finance, config)
 
   client.once('clientReady', async () => {
     const definition = commandDefinition().toJSON()
     const growthDefinition = growth.commandDefinition().toJSON()
+    const financeDefinition = finance.commandDefinition().toJSON()
     if (config.guildId) {
       const guild = await client.guilds.fetch(config.guildId)
-      await guild.commands.set([definition, growthDefinition])
-      console.log(`ESN CAM ready as ${client.user.tag}; /cam + /growth registered in ${guild.name}`)
+      await guild.commands.set([definition, growthDefinition, financeDefinition])
+      console.log(`ESN Operator ready as ${client.user.tag}; /cam + /growth + /esn registered in ${guild.name}`)
     } else {
-      await client.application.commands.set([definition, growthDefinition])
-      console.log(`ESN CAM ready as ${client.user.tag}; /cam + /growth registered globally`)
+      await client.application.commands.set([definition, growthDefinition, financeDefinition])
+      console.log(`ESN Operator ready as ${client.user.tag}; /cam + /growth + /esn registered globally`)
     }
     growth.start(client)
   })
@@ -131,6 +134,21 @@ async function createDiscordController(config, camera, recorder, fullConfig) {
       } catch (error) {
         console.error(error)
         await safeReply(interaction, { content: `ESN Growth error: ${error.message}`, ephemeral: true })
+      }
+      return
+    }
+
+    if (interaction.commandName === 'esn') {
+      if (!isAuthorized(interaction, config)) {
+        await interaction.reply({ content: 'You are not authorized to control ESN Operator.', ephemeral: true })
+        return
+      }
+
+      try {
+        await finance.handle(interaction)
+      } catch (error) {
+        console.error(error)
+        await safeReply(interaction, { content: `ESN Operator error: ${error.message}`, ephemeral: true })
       }
       return
     }
