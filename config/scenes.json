@@ -1,0 +1,24 @@
+{
+  "presets": {
+    "full-ad": {
+      "description": "Full ESN SMP vertical advertisement",
+      "shots": []
+    },
+    "spawn": {
+      "description": "Spawn and castle showcase",
+      "shots": []
+    },
+    "pvp": {
+      "description": "Arena and PvP showcase",
+      "shots": []
+    },
+    "boss": {
+      "description": "World boss showcase",
+      "shots": []
+    },
+    "exclusive-items": {
+      "description": "Exclusive armor and weapon showcase",
+      "shots": []
+    }
+  }
+}
