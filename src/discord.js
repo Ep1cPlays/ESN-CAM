@@ -134,7 +134,7 @@ async function createDiscordController(config, camera, recorder, fullConfig) {
             ephemeral: true
           }).catch(() => {})
         })
-        await interaction.editReply('ESN CAM is connecting to **esn.ggwp.cc**. If Microsoft needs authorization, I will send the login code here.')
+        await interaction.editReply(`ESN CAM is connecting to **${fullConfig.minecraft.host}:${fullConfig.minecraft.port}** using **Minecraft Bedrock**. If Microsoft/Xbox needs authorization, I will send the login code here.`)
         return
       }
 
@@ -152,14 +152,14 @@ async function createDiscordController(config, camera, recorder, fullConfig) {
         fs.rmSync(authFolder, { recursive: true, force: true })
         fs.mkdirSync(authFolder, { recursive: true })
 
-        await interaction.editReply('Cached Microsoft login cleared. Starting a fresh Microsoft sign-in now...')
+        await interaction.editReply('Cached Bedrock/Xbox login cleared. Starting a fresh Microsoft sign-in now...')
 
         if (!camera.config.port) camera.config.port = 17769
         await camera.start(async data => {
           const url = data.verification_uri || data.verification_uri_complete || 'https://www.microsoft.com/link'
           const code = data.user_code || data.code || 'Check the Raven console'
           await interaction.followUp({
-            content: `**Choose the Microsoft account you want ESN CAM to use**\nOpen: ${url}\nCode: **${code}**\nSign in with the correct Microsoft account. ESN CAM will reconnect automatically after approval.`,
+            content: `**Choose the Microsoft account with your Bedrock/Xbox profile**\nOpen: ${url}\nCode: **${code}**\nSign in with the correct Microsoft account. ESN CAM will reconnect to ESN SMP automatically after approval.`,
             ephemeral: true
           }).catch(() => {})
         })
@@ -174,6 +174,7 @@ async function createDiscordController(config, camera, recorder, fullConfig) {
         await interaction.reply({
           content:
             `**Minecraft:** ${mc.state}\n` +
+            `**Edition:** ${mc.edition || 'Bedrock'}\n` +
             `**Account:** ${mc.username || 'not connected'}\n` +
             `**Minecraft version:** ${mc.version || 'unknown'}\n` +
             `**Position:** ${pos}\n` +
@@ -189,7 +190,9 @@ async function createDiscordController(config, camera, recorder, fullConfig) {
         const d = runDiagnostics(fullConfig)
         await interaction.reply({
           content:
-            `**Raven renderer ready:** ${statusLine(d.rendererReady)}\n` +
+            `**Minecraft edition:** ${d.edition}\n` +
+            `**Bedrock protocol:** ${statusLine(d.bedrockProtocol)}\n` +
+            `**Raven video renderer ready:** ${statusLine(d.rendererReady)}\n` +
             `Node: ${d.node}\n` +
             `FFmpeg: ${statusLine(d.ffmpeg)}\n` +
             `node-canvas-webgl: ${statusLine(d.nodeCanvasWebgl)}\n` +
