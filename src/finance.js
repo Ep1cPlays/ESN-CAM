@@ -13,7 +13,7 @@ function parseDate(value) {
   if (!raw) return null
   const direct = new Date(raw)
   if (!Number.isNaN(direct.getTime())) return direct
-  const match = raw.match(/^(\\d{1,2})[\\/-](\\d{1,2})[\\/-](\\d{2,4})$/)
+  const match = raw.match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{2,4})$/)
   if (!match) return null
   let year = Number(match[3])
   if (year < 100) year += 2000
@@ -24,8 +24,8 @@ function parseDate(value) {
 function parseAmount(value) {
   let raw = String(value ?? '').trim()
   if (!raw) return null
-  const negative = /^\\(.*\\)$/.test(raw)
-  raw = raw.replace(/[,$£€\\s]/g, '').replace(/[()]/g, '')
+  const negative = /^\(.*\)$/.test(raw)
+  raw = raw.replace(/[,$£€\s]/g, '').replace(/[()]/g, '')
   const n = Number(raw)
   if (!Number.isFinite(n)) return null
   return negative ? -Math.abs(n) : n
@@ -34,12 +34,12 @@ function parseAmount(value) {
 function normalizeMerchant(value) {
   return String(value || '')
     .toUpperCase()
-    .replace(/HTTPS?:\\/\\/\\S+/g, ' ')
-    .replace(/\\b(POS|PURCHASE|PAYMENT|DEBIT|CARD|ONLINE|RECURRING|AUTOPAY|ACH|INC|LLC|LTD|COM)\\b/g, ' ')
-    .replace(/[#*]\\w+/g, ' ')
-    .replace(/\\b\\d{3,}\\b/g, ' ')
+    .replace(/HTTPS?:\/\/\S+/g, ' ')
+    .replace(/\b(POS|PURCHASE|PAYMENT|DEBIT|CARD|ONLINE|RECURRING|AUTOPAY|ACH|INC|LLC|LTD|COM)\b/g, ' ')
+    .replace(/[#*]\w+/g, ' ')
+    .replace(/\b\d{3,}\b/g, ' ')
     .replace(/[^A-Z0-9&' -]/g, ' ')
-    .replace(/\\s+/g, ' ')
+    .replace(/\s+/g, ' ')
     .trim()
     .slice(0, 80)
 }
@@ -66,8 +66,8 @@ function parseCsv(text) {
     } else if (ch === ',') {
       row.push(cell)
       cell = ''
-    } else if (ch === '\\n') {
-      row.push(cell.replace(/\\r$/, ''))
+    } else if (ch === '\n') {
+      row.push(cell.replace(/\r$/, ''))
       rows.push(row)
       row = []
       cell = ''
@@ -76,7 +76,7 @@ function parseCsv(text) {
     }
   }
 
-  row.push(cell.replace(/\\r$/, ''))
+  row.push(cell.replace(/\r$/, ''))
   if (row.some(value => value.trim())) rows.push(row)
   if (rows.length < 2) return []
 
@@ -301,12 +301,12 @@ function createFinanceManager(config, discordConfig) {
       const pending = store.data.purchaseRequests.filter(item => item.status === 'pending').length
       await interaction.reply({
         content:
-          '**ESN Operator — Finance**\\n' +
-          'Transactions stored: **' + store.data.transactions.length + '**\\n' +
-          'Recurring charges detected: **' + subscriptions.length + '**\\n' +
-          'Estimated subscription burn: **' + money(monthlyBurn(subscriptions)) + '/month**\\n' +
-          'Pending purchase requests: **' + pending + '**\\n' +
-          'Purchasing lockdown: **' + (store.data.lockdown ? 'ON' : 'OFF') + '**\\n' +
+          '**ESN Operator — Finance**\n' +
+          'Transactions stored: **' + store.data.transactions.length + '**\n' +
+          'Recurring charges detected: **' + subscriptions.length + '**\n' +
+          'Estimated subscription burn: **' + money(monthlyBurn(subscriptions)) + '/month**\n' +
+          'Pending purchase requests: **' + pending + '**\n' +
+          'Purchasing lockdown: **' + (store.data.lockdown ? 'ON' : 'OFF') + '**\n' +
           'Payment credentials stored by bot: **NO**',
         ephemeral: true
       })
@@ -318,7 +318,7 @@ function createFinanceManager(config, discordConfig) {
       const source = (interaction.options.getString('source') || 'cashapp')
         .trim().toLowerCase().replace(/[^a-z0-9_-]/g, '').slice(0, 40) || 'import'
 
-      if (!/\\.csv$/i.test(attachment.name || '') && !String(attachment.contentType || '').includes('csv')) {
+      if (!/\.csv$/i.test(attachment.name || '') && !String(attachment.contentType || '').includes('csv')) {
         throw new Error('Please upload a CSV transaction export.')
       }
       if (attachment.size > config.maxImportBytes) throw new Error('CSV is larger than the configured import limit.')
@@ -335,7 +335,7 @@ function createFinanceManager(config, discordConfig) {
       const subscriptions = detectSubscriptions(store.data.transactions, store.data.ignoredMerchants)
 
       await interaction.editReply(
-        'Imported **' + added + '** new transaction(s).\\n' +
+        'Imported **' + added + '** new transaction(s).\n' +
         'Detected **' + subscriptions.length + '** recurring charge(s). Use /esn subscriptions to review them.'
       )
       return
@@ -374,7 +374,7 @@ function createFinanceManager(config, discordConfig) {
       })
 
       await interaction.reply({
-        content: '**Detected subscriptions / recurring charges**\\n' + lines.join('\\n'),
+        content: '**Detected subscriptions / recurring charges**\n' + lines.join('\n'),
         ephemeral: true
       })
       return
@@ -409,12 +409,12 @@ function createFinanceManager(config, discordConfig) {
 
       await interaction.reply({
         content:
-          '**ESN Purchase Request ' + purchase.id + '**\\n' +
-          'Item: **' + purchase.item + '**\\n' +
-          'Vendor: **' + purchase.vendor + '**\\n' +
-          'Expected total: **' + money(purchase.amount) + '**\\n' +
-          (purchase.checkoutUrl ? 'Checkout: <' + purchase.checkoutUrl + '>\\n' : '') +
-          'Status: **PENDING OWNER APPROVAL**\\n\\n' +
+          '**ESN Purchase Request ' + purchase.id + '**\n' +
+          'Item: **' + purchase.item + '**\n' +
+          'Vendor: **' + purchase.vendor + '**\n' +
+          'Expected total: **' + money(purchase.amount) + '**\n' +
+          (purchase.checkoutUrl ? 'Checkout: <' + purchase.checkoutUrl + '>\n' : '') +
+          'Status: **PENDING OWNER APPROVAL**\n\n' +
           'No Cash App login, PIN, CVV, or full card number is stored by ESN Operator.',
         ephemeral: true,
         allowedMentions: { parse: [] }
@@ -439,10 +439,10 @@ function createFinanceManager(config, discordConfig) {
 
       await interaction.reply({
         content:
-          'Purchase **' + purchase.id + '** is **' + purchase.status.toUpperCase() + '**.\\n' +
+          'Purchase **' + purchase.id + '** is **' + purchase.status.toUpperCase() + '**.\n' +
           '**' + purchase.vendor + ' — ' + purchase.item + ' — ' + money(purchase.amount) + '**' +
           (purchase.status === 'approved' && purchase.checkoutUrl
-            ? '\\nCheckout: <' + purchase.checkoutUrl + '>\\n\\nApproval is recorded. No payment is charged until a tokenized payment provider is connected.'
+            ? '\nCheckout: <' + purchase.checkoutUrl + '>\n\nApproval is recorded. No payment is charged until a tokenized payment provider is connected.'
             : ''),
         ephemeral: true,
         allowedMentions: { parse: [] }
@@ -455,7 +455,7 @@ function createFinanceManager(config, discordConfig) {
       const lines = recent.map(item =>
         '**' + item.id + '** — ' + item.vendor + ' — ' + item.item + ' — ' + money(item.amount) + ' — **' + item.status.toUpperCase() + '**'
       )
-      await interaction.reply({ content: lines.join('\\n') || 'No purchase requests yet.', ephemeral: true })
+      await interaction.reply({ content: lines.join('\n') || 'No purchase requests yet.', ephemeral: true })
       return
     }
 
