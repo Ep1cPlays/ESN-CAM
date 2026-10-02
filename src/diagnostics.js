@@ -1,6 +1,7 @@
 'use strict'
 
 const fs = require('node:fs')
+const path = require('node:path')
 const { spawnSync } = require('node:child_process')
 
 function commandExists(command, args = ['-version']) {
@@ -33,10 +34,11 @@ function runDiagnostics(config) {
     display: Boolean(process.env.DISPLAY)
   }
 
-  for (const [key, dir] of [
+  for (const [key, relativeDir] of [
     ['authDirectoryWritable', 'auth'],
     ['recordingsDirectoryWritable', config.recording.directory]
   ]) {
+    const dir = path.join(__dirname, '..', relativeDir)
     try {
       fs.mkdirSync(dir, { recursive: true })
       fs.accessSync(dir, fs.constants.W_OK)
