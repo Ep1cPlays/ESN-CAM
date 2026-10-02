@@ -3,6 +3,7 @@
 const { EventEmitter } = require('node:events')
 const dns = require('node:dns')
 const net = require('node:net')
+const dgram = require('node:dgram')
 const bedrock = require('bedrock-protocol')
 
 const wait = ms => new Promise(resolve => setTimeout(resolve, ms))
@@ -87,36 +88,88 @@ class MinecraftCamera extends EventEmitter {
     const port = this.config.port || 19132
     const started = Date.now()
 
-    try {
-      const result = await bedrock.ping({
-        transport: 'raknet',
-        host: resolvedHost,
-        port,
-        timeout: 5000,
-        raknetBackend: 'jsp-raknet',
-        useRaknetWorkers: true
+    // Bedrock/RakNet unconnected ping. This is implemented directly with UDP so
+    // Raven does not need the optional native raknet bindings just to test reachability.
+    const MAGIC = Buffer.from('00ffff00fefefefefdfdfdfd12345678', 'hex')
+    const packet = Buffer.alloc(1 + 8 + 16 + 8)
+    packet[0] = 0x01
+    packet.writeBigInt64BE(BigInt(Date.now()), 1)
+    MAGIC.copy(packet, 9)
+    packet.writeBigInt64BE(BigInt.asIntN(64, BigInt(Date.now()) * 1000n + BigInt(process.pid)), 25)
+
+    return await new Promise(resolve => {
+      const socket = dgram.createSocket('udp4')
+      let finished = false
+
+      const finish = result => {
+        if (finished) return
+        finished = true
+        clearTimeout(timer)
+        try { socket.close() } catch {}
+        resolve(result)
+      }
+
+      const timer = setTimeout(() => {
+        finish({
+          ok: false,
+          host: this.config.host,
+          resolvedHost,
+          port,
+          latencyMs: Date.now() - started,
+          error: `UDP/RakNet ping timed out after 5000 ms. Raven could not reach ${this.config.host}:${port}/UDP.`
+        })
+      }, 5000)
+
+      socket.once('error', error => {
+        finish({
+          ok: false,
+          host: this.config.host,
+          resolvedHost,
+          port,
+          latencyMs: Date.now() - started,
+          error: error?.message || String(error)
+        })
       })
 
-      return {
-        ok: true,
-        host: this.config.host,
-        resolvedHost,
-        port,
-        latencyMs: Date.now() - started,
-        motd: result?.motd || result?.name || 'unknown',
-        version: result?.version || 'unknown',
-        players: Number.isFinite(result?.playersOnline) ? `${result.playersOnline}/${result.playersMax}` : 'unknown'
-      }
-    } catch (error) {
-      return {
-        ok: false,
-        host: this.config.host,
-        resolvedHost,
-        port,
-        latencyMs: Date.now() - started,
-        error: error?.message || String(error)
-      }
-    }
+      socket.once('message', message => {
+        const text = message.toString('utf8')
+        const motdIndex = text.indexOf('MCPE;')
+        let motd = 'Bedrock server responded'
+        let version = 'unknown'
+        let players = 'unknown'
+
+        if (motdIndex >= 0) {
+          const fields = text.slice(motdIndex).replace(/\0+$/g, '').split(';')
+          motd = fields[1] || motd
+          version = fields[3] || 'unknown'
+          if (fields[4] != null && fields[5] != null) players = `${fields[4]}/${fields[5]}`
+        }
+
+        finish({
+          ok: true,
+          host: this.config.host,
+          resolvedHost,
+          port,
+          latencyMs: Date.now() - started,
+          motd,
+          version,
+          players
+        })
+      })
+
+      socket.send(packet, port, resolvedHost, error => {
+        if (error) {
+          finish({
+            ok: false,
+            host: this.config.host,
+            resolvedHost,
+            port,
+            latencyMs: Date.now() - started,
+            error: error.message
+          })
+        }
+      })
+    })
   }
 
   async start(onMsaCode) {
