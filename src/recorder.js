@@ -74,7 +74,7 @@ class Recorder {
       if (!diagnostics.nodeCanvasWebgl) missing.push('node-canvas-webgl')
       if (!diagnostics.ffmpeg) missing.push('ffmpeg')
       if (!diagnostics.display && !diagnostics.xvfbRun) missing.push('Xvfb/DISPLAY')
-      throw new Error(`Raven recording renderer is not ready. Missing: ${missing.join(', ') || 'unknown dependency'}. Use /cam diagnostics.`)
+      throw new Error(`host recording renderer is not ready. Missing: ${missing.join(', ') || 'unknown dependency'}. Use /cam diagnostics.`)
     }
   }
 
