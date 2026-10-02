@@ -8,7 +8,12 @@ function reasonText(value) {
   try { return JSON.stringify(value) } catch { return String(value) }
 }
 
-async function testJavaAccess(config, onMsaCode) {
+async function testJavaAccess(config, onMsaCode, onStage) {
+  const stage = (name, detail = '') => {
+    console.log(`[Java auth] ${name}${detail ? ': ' + detail : ''}`)
+    if (typeof onStage === 'function') Promise.resolve(onStage(name, detail)).catch(() => {})
+  }
+  stage('START', `${config.host}:${config.port || 25565}`)
   return await new Promise((resolve, reject) => {
     let bot
     let timer
@@ -34,6 +39,7 @@ async function testJavaAccess(config, onMsaCode) {
       profilesFolder: config.profilesFolder,
       hideErrors: true,
       onMsaCode: data => {
+        stage('MICROSOFT_DEVICE_CODE', 'waiting for user authorization')
         if (typeof onMsaCode === 'function') {
           Promise.resolve(onMsaCode(data)).catch(() => {})
         }
@@ -44,6 +50,7 @@ async function testJavaAccess(config, onMsaCode) {
     if (config.version) options.version = config.version
 
     try {
+      stage('MINECRAFT_AUTH', 'starting Microsoft/Xbox/Minecraft Services authentication')
       bot = mineflayer.createBot(options)
     } catch (error) {
       finish(error)
@@ -54,7 +61,10 @@ async function testJavaAccess(config, onMsaCode) {
       finish(new Error('Java login/server test timed out after 90 seconds.'))
     }, 90_000)
 
+    bot.once('login', () => stage('SERVER_LOGIN', `authenticated as ${bot.username || 'unknown'}`))
+
     bot.once('spawn', () => {
+      stage('SPAWN', 'Java profile authenticated and server join completed')
       finish(null, {
         ok: true,
         username: bot.username || null,
@@ -65,11 +75,22 @@ async function testJavaAccess(config, onMsaCode) {
     })
 
     bot.on('kicked', reason => {
+      stage('SERVER_REJECTED', reasonText(reason))
       finish(new Error('Java server rejected the CAM account: ' + reasonText(reason)))
     })
 
     bot.on('error', error => {
-      finish(new Error(error?.message || reasonText(error)))
+      const message = error?.message || reasonText(error)
+      let authStage = 'UNKNOWN'
+      if (/profile data|own minecraft|profile/i.test(message)) authStage = 'JAVA_PROFILE'
+      else if (/xsts|xbox/i.test(message)) authStage = 'XBOX_XSTS'
+      else if (/token|minecraft services|minecraftservices/i.test(message)) authStage = 'MINECRAFT_SERVICES_TOKEN'
+      else if (/microsoft|msa|device/i.test(message)) authStage = 'MICROSOFT_LOGIN'
+      else if (/connect|econn|timeout|dns|socket/i.test(message)) authStage = 'SERVER_CONNECTION'
+      stage('FAILED_' + authStage, message)
+      const wrapped = new Error(`[${authStage}] ${message}`)
+      wrapped.authStage = authStage
+      finish(wrapped)
     })
 
     bot.on('end', reason => {
