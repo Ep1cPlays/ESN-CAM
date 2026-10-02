@@ -10,7 +10,7 @@ async function testJavaAccess(config, onMsaCode, onStage) {
 
   stage('START', 'Java entitlement/profile test (server protocol independent)')
   const cacheId = 'ESN-JAVA-CAM-' + Date.now()
-  const flow = new Authflow(cacheId, config.profilesFolder, { forceRefresh: true }, data => {
+  const flow = new Authflow(cacheId, config.profilesFolder, { flow: 'live', forceRefresh: true }, data => {
     stage('MICROSOFT_DEVICE_CODE', 'waiting for user authorization')
     if (typeof onMsaCode === 'function') Promise.resolve(onMsaCode(data)).catch(() => {})
   })
