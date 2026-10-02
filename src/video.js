@@ -80,7 +80,12 @@ function commandDefinition() {
 
   command.addSubcommand(sub => sub
     .setName('job')
-    .setDescription('Check a cinematic AI job')
+    .setDescription('Check a cinematic AI job and download it when ready')
+    .addStringOption(option => option.setName('id').setDescription('Job ID').setRequired(true).setMaxLength(80)))
+
+  command.addSubcommand(sub => sub
+    .setName('cancel')
+    .setDescription('Cancel a queued or running cinematic AI job')
     .addStringOption(option => option.setName('id').setDescription('Job ID').setRequired(true).setMaxLength(80)))
 
   return command
@@ -152,6 +157,37 @@ class CinematicWorkerClient {
     const body = await response.json().catch(() => ({}))
     if (!response.ok) throw new Error(body.error || 'Cinematic worker returned HTTP ' + response.status)
     return body
+  }
+
+  async cancel(id) {
+    const response = await fetch(this.config.workerUrl.replace(/\/$/, '') + '/v1/jobs/' + encodeURIComponent(id) + '/cancel', {
+      method: 'POST',
+      headers: this.headers(),
+      body: '{}',
+      signal: AbortSignal.timeout(8000)
+    })
+    const body = await response.json().catch(() => ({}))
+    if (!response.ok) throw new Error(body.error || 'Cinematic worker returned HTTP ' + response.status)
+    return body
+  }
+
+  async download(id, outputPath, maxBytes) {
+    const response = await fetch(this.config.workerUrl.replace(/\/$/, '') + '/v1/jobs/' + encodeURIComponent(id) + '/file', {
+      headers: this.headers(),
+      signal: AbortSignal.timeout(120000)
+    })
+    if (!response.ok) {
+      const body = await response.json().catch(() => ({}))
+      throw new Error(body.error || 'Could not download cinematic output.')
+    }
+
+    const declared = Number(response.headers.get('content-length') || 0)
+    if (declared && declared > maxBytes) throw new Error('Finished cinematic is larger than the configured download limit.')
+    const bytes = Buffer.from(await response.arrayBuffer())
+    if (bytes.length > maxBytes) throw new Error('Finished cinematic exceeded the configured download limit.')
+    ensureDir(path.dirname(outputPath))
+    fs.writeFileSync(outputPath, bytes)
+    return outputPath
   }
 }
 
@@ -331,9 +367,35 @@ function createVideoManager(config) {
 
       if (job.progress !== undefined) responseText += '\nProgress: **' + Math.round(Number(job.progress) * 100) + '%**'
       if (job.error) responseText += '\nError: ' + String(job.error).slice(0, 1200)
-      if (job.status === 'complete') responseText += '\nOutput is ready on the cinematic worker.'
+
+      if (job.status === 'complete') {
+        const output = path.resolve(config.outputDir, 'ai-' + id + '.mp4')
+        try {
+          if (!fs.existsSync(output)) await worker.download(id, output, config.maxSourceBytes)
+          const size = fs.statSync(output).size
+          if (size <= config.discordAttachmentBytes) {
+            await interaction.editReply({
+              content: responseText + '\n**Finished cinematic attached.**',
+              files: [new AttachmentBuilder(output)]
+            })
+          } else {
+            await interaction.editReply(responseText + '\nFinished MP4 saved locally at ' + output + ', but it is too large to attach to Discord.')
+          }
+        } catch (error) {
+          await interaction.editReply(responseText + '\nOutput is ready, but automatic download failed: ' + error.message)
+        }
+        return
+      }
 
       await interaction.editReply(responseText)
+      return
+    }
+
+    if (sub === 'cancel') {
+      const id = interaction.options.getString('id', true)
+      await interaction.deferReply({ ephemeral: true })
+      const job = await worker.cancel(id)
+      await interaction.editReply('Cinematic job ' + job.id + ' is now **' + String(job.status).toUpperCase() + '**.')
     }
   }
 
