@@ -295,8 +295,8 @@ function cpuCinematic(prompt, format, seconds, style, config, title = 'ES NETWOR
     'noise=alls=7:allf=t',
     'eq=contrast=1.12:saturation=1.08:brightness=-0.025',
     'vignette=PI/5',
-    'drawbox=x=0:y=h*0.15:w=w:h=2:color=' + palette.accent + '@0.55:t=fill',
-    'drawbox=x=0:y=h*0.85:w=w:h=2:color=' + palette.accent + '@0.45:t=fill',
+    'drawbox=x=0:y=' + Math.round(height * 0.15) + ':w=' + width + ':h=2:color=' + palette.accent + '@0.55:t=fill',
+    'drawbox=x=0:y=' + Math.round(height * 0.85) + ':w=' + width + ':h=2:color=' + palette.accent + '@0.45:t=fill',
     'fade=t=in:st=0:d=0.45',
     'fade=t=out:st=' + Math.max(0.1, duration - 0.6).toFixed(2) + ':d=0.6'
   ]
