@@ -1,6 +1,7 @@
 'use strict'
 
-require('dotenv').config()
+const path = require('node:path')
+require('dotenv').config({ path: path.join(__dirname, '..', '.env') })
 
 function required(name) {
   const value = process.env[name]?.trim()
@@ -44,7 +45,7 @@ module.exports = {
     username: process.env.MC_USERNAME?.trim() || undefined,
     auth: process.env.MC_AUTH?.trim() || 'microsoft',
     version: process.env.MC_VERSION?.trim() || undefined,
-    profilesFolder: 'auth',
+    profilesFolder: path.join(__dirname, '..', 'auth'),
     reconnectSeconds: optionalInt('MC_RECONNECT_SECONDS', 10)
   },
   recording: {
