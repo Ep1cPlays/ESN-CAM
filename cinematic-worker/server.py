@@ -35,6 +35,9 @@ from urllib.parse import urlparse
 ROOT = Path(__file__).resolve().parent
 OUTPUT_ROOT = Path(os.environ.get("CINEMATIC_OUTPUT_DIR", str(ROOT / "outputs"))).resolve()
 OUTPUT_ROOT.mkdir(parents=True, exist_ok=True)
+ASSET_ROOT = Path(os.environ.get("CINEMATIC_ASSET_DIR", str(ROOT / "assets"))).resolve()
+ASSET_ROOT.mkdir(parents=True, exist_ok=True)
+MAX_ASSET_BYTES = int(os.environ.get("CINEMATIC_MAX_ASSET_BYTES", str(50 * 1024 * 1024)))
 
 BIND = os.environ.get("CINEMATIC_BIND", "127.0.0.1")
 PORT = int(os.environ.get("CINEMATIC_PORT", "8765"))
@@ -87,6 +90,8 @@ class Job:
     quality: str
     seed: int
     requested_by: str | None
+    mode: str = "text"
+    asset: str | None = None
     status: str = "queued"
     progress: float = 0.0
     output: str | None = None
@@ -112,6 +117,8 @@ def _load_previous_jobs() -> None:
     for metadata in OUTPUT_ROOT.glob("*/job.json"):
         try:
             raw = json.loads(metadata.read_text(encoding="utf-8"))
+            raw.setdefault("mode", "text")
+            raw.setdefault("asset", None)
             job = Job(**raw)
             if job.status in {"queued", "running"}:
                 job.status = "failed"
@@ -170,25 +177,98 @@ def _assert_runtime() -> None:
         raise RuntimeError("Missing LTX model files: " + ", ".join(missing))
 
 
-def _build_command(job: Job, output: Path) -> list[str]:
-    width, height = _dimensions(job.format)
-    common = [
-        "uv", "run", "python", "-m",
-        "ltx_pipelines.dfr_pipeline" if job.quality == "production" else "ltx_pipelines.distilled",
-        "--transformer-path", _resolve_model_path(TRANSFORMER),
-        "--text-encoder-path", _resolve_model_path(TEXT_ENCODER),
-        "--video-vae-path", _resolve_model_path(VIDEO_VAE),
-        "--audio-vae-path", _resolve_model_path(AUDIO_VAE),
-        "--spatial-upsampler-path", _resolve_model_path(SPATIAL_UPSCALER),
-        "--num-frames", str(_frames(job.seconds)),
-        "--width", str(width),
-        "--height", str(height),
-        "--seed", str(job.seed),
-        "--output-path", str(output),
-        "--prompt", job.prompt,
-    ]
+def _probe_duration(video_path: Path) -> float:
+    result = subprocess.run(
+        [
+            "ffprobe", "-v", "error",
+            "-show_entries", "format=duration",
+            "-of", "default=noprint_wrappers=1:nokey=1",
+            str(video_path),
+        ],
+        capture_output=True,
+        text=True,
+        timeout=20,
+        check=False,
+    )
+    if result.returncode != 0:
+        raise RuntimeError("ffprobe could not inspect the uploaded video.")
+    return float(result.stdout.strip())
 
-    if job.quality == "production":
+
+def _prepare_retake_source(job: Job, folder: Path) -> tuple[Path, float]:
+    if not job.asset:
+        raise RuntimeError("Retake mode requires an uploaded video asset.")
+    source = Path(job.asset)
+    if not source.exists():
+        raise RuntimeError("Uploaded video asset is missing.")
+    if shutil.which("ffmpeg") is None or shutil.which("ffprobe") is None:
+        raise RuntimeError("ffmpeg and ffprobe are required for video retake mode.")
+
+    duration = max(1.0, min(float(job.seconds), _probe_duration(source), 30.0))
+    target_frames = _frames(int(max(4, duration)))
+    end_time = (target_frames - 1) / 24.0
+    normalized = folder / "retake-source.mp4"
+
+    result = subprocess.run(
+        [
+            "ffmpeg", "-y", "-i", str(source),
+            "-vf", "scale=trunc(iw/32)*32:trunc(ih/32)*32,fps=24",
+            "-frames:v", str(target_frames),
+            "-c:v", "libx264", "-pix_fmt", "yuv420p",
+            "-c:a", "aac", "-shortest",
+            str(normalized),
+        ],
+        capture_output=True,
+        text=True,
+        timeout=180,
+        check=False,
+    )
+    if result.returncode != 0 or not normalized.exists():
+        raise RuntimeError("Could not normalize video for LTX retake: " + result.stderr[-1200:])
+    return normalized, end_time
+
+
+def _build_command(job: Job, output: Path) -> list[str]:
+    folder = output.parent
+
+    if job.mode == "retake":
+        source, end_time = _prepare_retake_source(job, folder)
+        common = [
+            "uv", "run", "python", "-m", "ltx_pipelines.retake",
+            "--transformer-path", _resolve_model_path(TRANSFORMER),
+            "--text-encoder-path", _resolve_model_path(TEXT_ENCODER),
+            "--video-vae-path", _resolve_model_path(VIDEO_VAE),
+            "--audio-vae-path", _resolve_model_path(AUDIO_VAE),
+            "--video-path", str(source),
+            "--start-time", "0",
+            "--end-time", str(end_time),
+            "--seed", str(job.seed),
+            "--output-path", str(output),
+            "--prompt", job.prompt,
+        ]
+    else:
+        width, height = _dimensions(job.format)
+        common = [
+            "uv", "run", "python", "-m",
+            "ltx_pipelines.dfr_pipeline" if job.quality == "production" else "ltx_pipelines.distilled",
+            "--transformer-path", _resolve_model_path(TRANSFORMER),
+            "--text-encoder-path", _resolve_model_path(TEXT_ENCODER),
+            "--video-vae-path", _resolve_model_path(VIDEO_VAE),
+            "--audio-vae-path", _resolve_model_path(AUDIO_VAE),
+            "--spatial-upsampler-path", _resolve_model_path(SPATIAL_UPSCALER),
+            "--num-frames", str(_frames(job.seconds)),
+            "--width", str(width),
+            "--height", str(height),
+            "--seed", str(job.seed),
+            "--output-path", str(output),
+            "--prompt", job.prompt,
+        ]
+        if job.mode == "image":
+            if not job.asset or not Path(job.asset).exists():
+                raise RuntimeError("Image mode requires an uploaded image asset.")
+            common.extend(["--image", str(job.asset), "0", "1.0"])
+
+    if job.quality == "production" and job.mode != "retake":
         if not DETAILING_LORA:
             raise RuntimeError("Production quality requires LTX_DETAILING_LORA.")
         detail_path = _resolve_model_path(DETAILING_LORA)
@@ -372,6 +452,25 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         parsed = urlparse(self.path)
+
+        if parsed.path == "/v1/assets":
+            try:
+                size = int(self.headers.get("Content-Length", "0"))
+                if size <= 0 or size > MAX_ASSET_BYTES:
+                    raise ValueError("Asset is empty or exceeds the configured size limit.")
+                filename = self.headers.get("X-Filename", "asset.bin")
+                extension = Path(filename).suffix.lower()
+                if extension not in {".png", ".jpg", ".jpeg", ".webp", ".mp4", ".mov", ".webm", ".mkv"}:
+                    raise ValueError("Unsupported asset type.")
+                asset_id = time.strftime("%Y%m%d-%H%M%S") + "-" + secrets.token_hex(4)
+                target = ASSET_ROOT / (asset_id + extension)
+                target.write_bytes(self.rfile.read(size))
+                self._json(HTTPStatus.CREATED, {"id": asset_id, "path": str(target)})
+                return
+            except ValueError as exc:
+                self._json(HTTPStatus.BAD_REQUEST, {"error": str(exc)})
+                return
+
         if parsed.path == "/v1/jobs":
             if job_queue.full():
                 self._json(HTTPStatus.TOO_MANY_REQUESTS, {"error": "cinematic queue is full"})
@@ -395,6 +494,20 @@ class Handler(BaseHTTPRequestHandler):
                 if quality not in {"fast", "production"}:
                     raise ValueError("quality must be fast or production")
 
+                mode = str(body.get("mode", "text"))
+                if mode not in {"text", "image", "retake"}:
+                    raise ValueError("mode must be text, image, or retake")
+
+                asset = None
+                asset_id = str(body.get("asset_id", "")).strip()
+                if mode in {"image", "retake"}:
+                    if not asset_id or any(ch not in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-" for ch in asset_id):
+                        raise ValueError("A valid uploaded asset_id is required for this mode.")
+                    candidates = list(ASSET_ROOT.glob(asset_id + ".*"))
+                    if len(candidates) != 1:
+                        raise ValueError("Uploaded asset was not found.")
+                    asset = str(candidates[0])
+
                 seed = int(body.get("seed", secrets.randbelow(2_000_000_000)))
                 job_id = time.strftime("%Y%m%d-%H%M%S") + "-" + secrets.token_hex(3)
                 job = Job(
@@ -406,6 +519,8 @@ class Handler(BaseHTTPRequestHandler):
                     quality=quality,
                     seed=seed,
                     requested_by=str(body.get("requested_by"))[:80] if body.get("requested_by") else None,
+                    mode=mode,
+                    asset=asset,
                     created_at=time.time(),
                 )
 
