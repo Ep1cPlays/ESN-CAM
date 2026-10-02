@@ -4,3 +4,4 @@ auth/
 recordings/
 *.log
 .DS_Store
+data/
