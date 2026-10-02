@@ -11,12 +11,13 @@ function reasonText(value) {
 async function testJavaAccess(config, onMsaCode) {
   return await new Promise((resolve, reject) => {
     let bot
+    let timer
     let settled = false
 
     const finish = (error, result) => {
       if (settled) return
       settled = true
-      clearTimeout(timer)
+      if (timer) clearTimeout(timer)
       if (bot) {
         try { bot.quit('ESN Java entitlement test complete') } catch {}
       }
@@ -47,7 +48,7 @@ async function testJavaAccess(config, onMsaCode) {
       return
     }
 
-    const timer = setTimeout(() => {
+    timer = setTimeout(() => {
       finish(new Error('Java login/server test timed out after 90 seconds.'))
     }, 90_000)
 
