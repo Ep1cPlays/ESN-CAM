@@ -1,87 +1,173 @@
 'use strict'
 
 const { EventEmitter } = require('node:events')
-const mineflayer = require('mineflayer')
-const { pathfinder, Movements, goals } = require('mineflayer-pathfinder')
+const bedrock = require('bedrock-protocol')
+
+const wait = ms => new Promise(resolve => setTimeout(resolve, ms))
+const ZERO_UUID = '00000000-0000-0000-0000-000000000000'
+
+function reasonText(reason) {
+  if (reason == null) return 'unknown'
+  if (typeof reason === 'string') return reason
+  try { return JSON.stringify(reason) } catch { return String(reason) }
+}
+
+function sameRuntimeId(a, b) {
+  if (a == null || b == null) return false
+  try { return BigInt(a) === BigInt(b) } catch { return String(a) === String(b) }
+}
 
 class MinecraftCamera extends EventEmitter {
   constructor(config, viewerConfig) {
     super()
     this.config = config
     this.viewerConfig = viewerConfig
-    this.bot = null
+    this.client = null
     this.state = 'offline'
     this.lastError = null
     this.reconnectTimer = null
     this.intentionalStop = false
-    this.viewerStarted = false
+    this.username = null
+    this.version = null
+    this.position = null
+    this.yaw = null
+    this.pitch = null
+    this.runtimeEntityId = null
+    this.currentTick = 0n
+    this.lastMsaCallback = null
   }
 
   async start(onMsaCode) {
     if (!this.config.username) throw new Error('MC_USERNAME is not set on Raven.')
-    if (this.bot && ['connecting', 'online'].includes(this.state)) return
+    if (this.client && ['connecting', 'joining', 'online'].includes(this.state)) return
 
     this.intentionalStop = false
     this.state = 'connecting'
     this.lastError = null
+    if (typeof onMsaCode === 'function') this.lastMsaCallback = onMsaCode
 
     const options = {
       host: this.config.host,
+      port: this.config.port || 19132,
       username: this.config.username,
-      auth: this.config.auth,
       profilesFolder: this.config.profilesFolder,
+      offline: false,
+      followPort: false,
+      raknetBackend: 'jsp-raknet',
+      useRaknetWorkers: false,
+      conLog: null,
       onMsaCode: data => {
         this.emit('msaCode', data)
-        if (typeof onMsaCode === 'function') onMsaCode(data)
+        const callback = typeof onMsaCode === 'function' ? onMsaCode : this.lastMsaCallback
+        if (typeof callback === 'function') Promise.resolve(callback(data)).catch(() => {})
       }
     }
-    if (this.config.port) options.port = this.config.port
+
     if (this.config.version) options.version = this.config.version
 
-    const bot = mineflayer.createBot(options)
-    this.bot = bot
-    bot.loadPlugin(pathfinder)
+    let client
+    try {
+      client = bedrock.createClient(options)
+    } catch (error) {
+      this.state = 'offline'
+      this.lastError = error.message
+      throw error
+    }
 
-    bot.once('spawn', async () => {
-      if (this.bot !== bot) return
-      this.state = 'online'
-      this.emit('online')
+    this.client = client
 
-      if (this.viewerConfig.enabled && !this.viewerStarted) {
-        try {
-          const viewer = require('prismarine-viewer').mineflayer
-          viewer(bot, {
-            port: this.viewerConfig.port,
-            firstPerson: true,
-            viewDistance: 8
-          })
-          this.viewerStarted = true
-          this.emit('viewer', this.viewerConfig.port)
-        } catch (error) {
-          this.lastError = `Viewer failed: ${error.message}`
-          this.emit('warning', this.lastError)
+    client.on('status', status => {
+      if (this.client !== client) return
+      if (this.state !== 'online') this.state = 'connecting'
+      this.emit('status', reasonText(status))
+    })
+
+    client.once('join', () => {
+      if (this.client !== client) return
+      this.state = 'joining'
+      this.username = client.username || client.profile?.name || this.config.username
+      this.version = client.version || this.config.version || null
+      this.emit('joined')
+    })
+
+    client.on('start_game', packet => {
+      if (this.client !== client) return
+      this.runtimeEntityId = packet.runtime_entity_id ?? this.runtimeEntityId
+      this.currentTick = packet.current_tick ?? this.currentTick
+      if (packet.player_position) {
+        this.position = {
+          x: Number(packet.player_position.x),
+          y: Number(packet.player_position.y),
+          z: Number(packet.player_position.z)
         }
+      }
+      if (packet.rotation) {
+        this.pitch = Number(packet.rotation.x ?? packet.rotation.pitch ?? this.pitch ?? 0)
+        this.yaw = Number(packet.rotation.z ?? packet.rotation.yaw ?? this.yaw ?? 0)
       }
     })
 
-    bot.on('kicked', reason => {
-      this.lastError = `Kicked: ${typeof reason === 'string' ? reason : JSON.stringify(reason)}`
+    client.on('move_player', packet => {
+      if (this.client !== client) return
+      if (!sameRuntimeId(packet.runtime_id, this.runtimeEntityId)) return
+      if (packet.position) {
+        this.position = {
+          x: Number(packet.position.x),
+          y: Number(packet.position.y),
+          z: Number(packet.position.z)
+        }
+      }
+      if (Number.isFinite(packet.yaw)) this.yaw = Number(packet.yaw)
+      if (Number.isFinite(packet.pitch)) this.pitch = Number(packet.pitch)
+      if (packet.tick != null) this.currentTick = packet.tick
+    })
+
+    client.on('correct_player_move_prediction', packet => {
+      if (this.client !== client) return
+      if (packet.position) {
+        this.position = {
+          x: Number(packet.position.x),
+          y: Number(packet.position.y),
+          z: Number(packet.position.z)
+        }
+      }
+      if (packet.tick != null) this.currentTick = packet.tick
+    })
+
+    client.once('spawn', () => {
+      if (this.client !== client) return
+      this.state = 'online'
+      this.username = client.username || client.profile?.name || this.config.username
+      this.version = client.version || this.config.version || null
+      this.emit('online')
+
+      if (this.viewerConfig.enabled) {
+        this.emit('warning', 'VIEWER_ENABLED is on, but the old Prismarine Viewer is Java/Mineflayer-only. Bedrock connection is still active.')
+      }
+    })
+
+    client.on('kick', reason => {
+      if (this.client !== client) return
+      this.lastError = `Kicked: ${reasonText(reason)}`
       this.emit('warning', this.lastError)
     })
 
-    bot.on('error', error => {
-      this.lastError = error.message
-      this.emit('warning', error.message)
+    client.on('error', error => {
+      if (this.client !== client) return
+      this.lastError = error?.message || reasonText(error)
+      this.emit('warning', this.lastError)
     })
 
-    bot.on('end', reason => {
-      if (this.bot !== bot) return
-      this.bot = null
-      this.viewerStarted = false
+    const closed = reason => {
+      if (this.client !== client) return
+      this.client = null
       this.state = 'offline'
-      this.emit('offline', reason)
+      this.emit('offline', reasonText(reason))
       if (!this.intentionalStop) this.scheduleReconnect()
-    })
+    }
+
+    client.once('close', closed)
+    client.once('disconnect', closed)
   }
 
   scheduleReconnect() {
@@ -105,89 +191,131 @@ class MinecraftCamera extends EventEmitter {
       clearTimeout(this.reconnectTimer)
       this.reconnectTimer = null
     }
-    const bot = this.bot
-    this.bot = null
-    this.viewerStarted = false
-    if (bot) {
-      try { bot.quit('ESN CAM stopped') } catch {}
+
+    const client = this.client
+    this.client = null
+
+    if (client) {
+      try {
+        if (typeof client.disconnect === 'function') client.disconnect('ESN CAM stopped')
+        else if (typeof client.close === 'function') client.close()
+      } catch {}
     }
+
     this.state = 'offline'
   }
 
   requireOnline() {
-    if (!this.bot || this.state !== 'online' || !this.bot.entity) {
-      throw new Error('ESN CAM is not online in Minecraft yet.')
+    if (!this.client || this.state !== 'online') {
+      throw new Error('ESN CAM is not online in Minecraft Bedrock yet.')
     }
-    return this.bot
+    return this.client
   }
 
   getStatus() {
-    const bot = this.bot
     return {
+      edition: 'Bedrock',
       state: this.state,
-      username: bot?.username || null,
-      version: bot?.version || null,
-      health: bot?.health ?? null,
-      food: bot?.food ?? null,
-      position: bot?.entity?.position
+      username: this.username,
+      version: this.version,
+      health: null,
+      food: null,
+      position: this.position
         ? {
-            x: Number(bot.entity.position.x.toFixed(2)),
-            y: Number(bot.entity.position.y.toFixed(2)),
-            z: Number(bot.entity.position.z.toFixed(2))
+            x: Number(this.position.x.toFixed(2)),
+            y: Number(this.position.y.toFixed(2)),
+            z: Number(this.position.z.toFixed(2))
           }
         : null,
-      yaw: bot?.entity ? Number(bot.entity.yaw.toFixed(4)) : null,
-      pitch: bot?.entity ? Number(bot.entity.pitch.toFixed(4)) : null,
+      yaw: Number.isFinite(this.yaw) ? Number(this.yaw.toFixed(4)) : null,
+      pitch: Number.isFinite(this.pitch) ? Number(this.pitch.toFixed(4)) : null,
       lastError: this.lastError
     }
   }
 
   getCurrentShot(name, durationSeconds = 5) {
-    const bot = this.requireOnline()
+    this.requireOnline()
+    if (!this.position) throw new Error('ESN CAM has not received its Bedrock position yet.')
+
     return {
       name,
       position: {
-        x: Number(bot.entity.position.x.toFixed(2)),
-        y: Number(bot.entity.position.y.toFixed(2)),
-        z: Number(bot.entity.position.z.toFixed(2))
+        x: Number(this.position.x.toFixed(2)),
+        y: Number(this.position.y.toFixed(2)),
+        z: Number(this.position.z.toFixed(2))
       },
-      yaw: Number(bot.entity.yaw.toFixed(5)),
-      pitch: Number(bot.entity.pitch.toFixed(5)),
+      yaw: Number.isFinite(this.yaw) ? Number(this.yaw.toFixed(5)) : 0,
+      pitch: Number.isFinite(this.pitch) ? Number(this.pitch.toFixed(5)) : 0,
       durationSeconds,
       settleSeconds: 1
     }
   }
 
+  sendCommand(command) {
+    const client = this.requireOnline()
+    client.queue('command_request', {
+      command,
+      origin: {
+        type: 0,
+        uuid: client.profile?.uuid || client.uuid || ZERO_UUID,
+        request_id: `esncam-${Date.now()}`
+      },
+      internal: false,
+      interval: 0
+    })
+  }
+
   async goTo(position, radius = 1) {
-    const bot = this.requireOnline()
-    const movements = new Movements(bot)
-    movements.canDig = false
-    movements.allow1by1towers = false
-    bot.pathfinder.setMovements(movements)
-    await bot.pathfinder.goto(new goals.GoalNear(
-      Math.round(position.x),
-      Math.round(position.y),
-      Math.round(position.z),
-      Math.max(1, Math.round(radius))
-    ))
+    this.requireOnline()
+    const target = {
+      x: Number(position.x),
+      y: Number(position.y),
+      z: Number(position.z)
+    }
+
+    this.sendCommand(`/tp @s ${target.x} ${target.y} ${target.z}`)
+    await wait(1200)
+
+    if (!this.position) return
+    const dx = this.position.x - target.x
+    const dy = this.position.y - target.y
+    const dz = this.position.z - target.z
+    const distance = Math.sqrt(dx * dx + dy * dy + dz * dz)
+
+    if (distance > Math.max(2, radius + 1)) {
+      throw new Error('Bedrock camera teleport was not accepted. Give the ESN CAM Bedrock account permission to use /tp (or OP it) on ESN SMP.')
+    }
   }
 
   async lookAt(position) {
-    const bot = this.requireOnline()
-    const Vec3 = require('vec3')
-    await bot.lookAt(new Vec3(position.x, position.y, position.z), true)
+    this.requireOnline()
+    if (!this.position) throw new Error('ESN CAM has not received its Bedrock position yet.')
+
+    const dx = Number(position.x) - this.position.x
+    const dy = Number(position.y) - this.position.y
+    const dz = Number(position.z) - this.position.z
+    const horizontal = Math.sqrt(dx * dx + dz * dz)
+
+    const yaw = Math.atan2(-dx, dz) * (180 / Math.PI)
+    const pitch = -Math.atan2(dy, horizontal) * (180 / Math.PI)
+
+    this.sendCommand(`/tp @s ~ ~ ~ ${yaw.toFixed(4)} ${pitch.toFixed(4)}`)
+    this.yaw = yaw
+    this.pitch = pitch
+    await wait(250)
   }
 
   async faceShot(shot) {
-    const bot = this.requireOnline()
-    if (Number.isFinite(shot.yaw) && Number.isFinite(shot.pitch)) {
-      await bot.look(shot.yaw, shot.pitch, true)
+    this.requireOnline()
+    if (!Number.isFinite(shot.yaw) || !Number.isFinite(shot.pitch)) {
+      if (shot.lookAt) return this.lookAt(shot.lookAt)
       return
     }
-    if (shot.lookAt) {
-      const Vec3 = require('vec3')
-      await bot.lookAt(new Vec3(shot.lookAt.x, shot.lookAt.y, shot.lookAt.z), true)
-    }
+
+    this.sendCommand(`/tp @s ~ ~ ~ ${Number(shot.yaw).toFixed(4)} ${Number(shot.pitch).toFixed(4)}`)
+    this.yaw = Number(shot.yaw)
+    this.pitch = Number(shot.pitch)
+    await wait(250)
   }
 }
 
