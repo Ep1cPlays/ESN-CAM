@@ -47,7 +47,8 @@ async function testJavaAccess(config, onMsaCode, onStage) {
     }
 
     if (config.port) options.port = config.port
-    if (config.version) options.version = config.version
+    // Always auto-detect the Java protocol from the server. MC_VERSION is the Bedrock/Geyser version and must not be reused here.
+    // Only an explicit MC_JAVA_VERSION should ever be supplied by config; for this entitlement test, auto-detection is safer.
 
     try {
       stage('MINECRAFT_AUTH', 'starting Microsoft/Xbox/Minecraft Services authentication')
