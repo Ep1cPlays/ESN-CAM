@@ -172,6 +172,12 @@ class MinecraftCamera extends EventEmitter {
     ))
   }
 
+  async lookAt(position) {
+    const bot = this.requireOnline()
+    const Vec3 = require('vec3')
+    await bot.lookAt(new Vec3(position.x, position.y, position.z), true)
+  }
+
   async faceShot(shot) {
     const bot = this.requireOnline()
     if (Number.isFinite(shot.yaw) && Number.isFinite(shot.pitch)) {
