@@ -68,28 +68,49 @@ async function testJavaConnection(config, onMsaCode, onStage) {
     if (typeof onStage === 'function') Promise.resolve(onStage(name, detail)).catch(() => {})
   }
 
-  stage('START', `connecting to ${config.host}:${config.port || 25565} as Minecraft Java 26.2`)
+  stage('START', `authenticating Java profile before connecting to ${config.host}`)
+  const flow = new Authflow('ESN-JAVA-CAM-CONNECT', config.profilesFolder, {
+    flow: 'sisu',
+    authTitle: Titles.MinecraftJava,
+    deviceType: 'Win32'
+  }, data => {
+    stage('MICROSOFT_DEVICE_CODE', 'waiting for user authorization')
+    if (typeof onMsaCode === 'function') Promise.resolve(onMsaCode(data)).catch(() => {})
+  })
+
+  const authResult = await flow.getMinecraftJavaToken({
+    fetchEntitlements: true,
+    fetchProfile: true
+  })
+  const profile = authResult?.profile
+  if (!authResult?.token || !profile?.name || !profile?.id) {
+    const error = new Error('Working Microsoft login did not return the Java token/profile needed for the server connection.')
+    error.authStage = 'JAVA_PROFILE'
+    throw error
+  }
+  stage('JAVA_PROFILE', `reusing authenticated profile ${profile.name}`)
+
   const mineflayer = require('mineflayer')
+  const options = {
+    host: config.host,
+    username: profile.name,
+    version: '26.2',
+    session: {
+      accessToken: authResult.token,
+      selectedProfile: { name: profile.name, id: profile.id }
+    },
+    skipValidation: true
+  }
+  // Important: when no Java port is configured, omit it entirely so
+  // node-minecraft-protocol can follow the server's Minecraft SRV record.
+  if (config.port) options.port = config.port
+
   let bot
-
   try {
-    bot = mineflayer.createBot({
-      host: config.host,
-      port: config.port || 25565,
-      username: config.username || 'ESN-JAVA-CAM',
-      auth: 'microsoft',
-      version: '26.2',
-      profilesFolder: config.profilesFolder,
-      onMsaCode: data => {
-        stage('MICROSOFT_DEVICE_CODE', 'waiting for user authorization')
-        if (typeof onMsaCode === 'function') Promise.resolve(onMsaCode(data)).catch(() => {})
-      }
-    })
-
+    bot = mineflayer.createBot(options)
     return await new Promise((resolve, reject) => {
       let settled = false
       const timer = setTimeout(() => finish(new Error('Java 26.2 connection timed out after 45 seconds.')), 45000)
-
       const cleanup = () => {
         clearTimeout(timer)
         bot?.removeListener('spawn', onSpawn)
@@ -107,20 +128,19 @@ async function testJavaConnection(config, onMsaCode, onStage) {
       }
       const onSpawn = () => {
         const p = bot.entity?.position
-        stage('SPAWN', `joined as ${bot.username || config.username || 'authenticated account'}`)
+        stage('SPAWN', `joined as ${bot.username || profile.name}`)
         finish(null, {
           ok: true,
-          username: bot.username || config.username || 'authenticated',
+          username: bot.username || profile.name,
           version: bot.version || '26.2',
           host: config.host,
-          port: config.port || 25565,
+          port: config.port || 'SRV/default',
           position: p ? { x: Number(p.x.toFixed(2)), y: Number(p.y.toFixed(2)), z: Number(p.z.toFixed(2)) } : null
         })
       }
       const onKicked = reason => finish(new Error('Server kicked Java CAM: ' + (typeof reason === 'string' ? reason : JSON.stringify(reason))))
       const onError = error => finish(error)
       const onEnd = reason => finish(new Error('Java connection ended before spawn: ' + (reason || 'unknown')))
-
       bot.once('spawn', onSpawn)
       bot.once('kicked', onKicked)
       bot.once('error', onError)
