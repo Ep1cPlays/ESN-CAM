@@ -62,4 +62,74 @@ async function testJavaAccess(config, onMsaCode, onStage) {
   }
 }
 
-module.exports = { testJavaAccess }
+async function testJavaConnection(config, onMsaCode, onStage) {
+  const stage = (name, detail = '') => {
+    console.log(`[Java 26.2] ${name}${detail ? ': ' + detail : ''}`)
+    if (typeof onStage === 'function') Promise.resolve(onStage(name, detail)).catch(() => {})
+  }
+
+  stage('START', `connecting to ${config.host}:${config.port || 25565} as Minecraft Java 26.2`)
+  const mineflayer = require('mineflayer')
+  let bot
+
+  try {
+    bot = mineflayer.createBot({
+      host: config.host,
+      port: config.port || 25565,
+      username: config.username || 'ESN-JAVA-CAM',
+      auth: 'microsoft',
+      version: '26.2',
+      profilesFolder: config.profilesFolder,
+      onMsaCode: data => {
+        stage('MICROSOFT_DEVICE_CODE', 'waiting for user authorization')
+        if (typeof onMsaCode === 'function') Promise.resolve(onMsaCode(data)).catch(() => {})
+      }
+    })
+
+    return await new Promise((resolve, reject) => {
+      let settled = false
+      const timer = setTimeout(() => finish(new Error('Java 26.2 connection timed out after 45 seconds.')), 45000)
+
+      const cleanup = () => {
+        clearTimeout(timer)
+        bot?.removeListener('spawn', onSpawn)
+        bot?.removeListener('kicked', onKicked)
+        bot?.removeListener('error', onError)
+        bot?.removeListener('end', onEnd)
+      }
+      const finish = (error, result) => {
+        if (settled) return
+        settled = true
+        cleanup()
+        try { bot?.quit('ESN CAM connection test complete') } catch {}
+        if (error) reject(error)
+        else resolve(result)
+      }
+      const onSpawn = () => {
+        const p = bot.entity?.position
+        stage('SPAWN', `joined as ${bot.username || config.username || 'authenticated account'}`)
+        finish(null, {
+          ok: true,
+          username: bot.username || config.username || 'authenticated',
+          version: bot.version || '26.2',
+          host: config.host,
+          port: config.port || 25565,
+          position: p ? { x: Number(p.x.toFixed(2)), y: Number(p.y.toFixed(2)), z: Number(p.z.toFixed(2)) } : null
+        })
+      }
+      const onKicked = reason => finish(new Error('Server kicked Java CAM: ' + (typeof reason === 'string' ? reason : JSON.stringify(reason))))
+      const onError = error => finish(error)
+      const onEnd = reason => finish(new Error('Java connection ended before spawn: ' + (reason || 'unknown')))
+
+      bot.once('spawn', onSpawn)
+      bot.once('kicked', onKicked)
+      bot.once('error', onError)
+      bot.once('end', onEnd)
+    })
+  } catch (error) {
+    try { bot?.quit() } catch {}
+    throw error
+  }
+}
+
+module.exports = { testJavaAccess, testJavaConnection }
