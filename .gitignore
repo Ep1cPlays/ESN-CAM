@@ -5,3 +5,6 @@ recordings/
 *.log
 .DS_Store
 data/
+
+cinematic-output/
+cinematic-worker/outputs/
