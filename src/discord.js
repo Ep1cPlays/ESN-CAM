@@ -41,7 +41,8 @@ function commandDefinition() {
     .addSubcommand(sub => sub.setName('status').setDescription('Show ESN CAM status'))
     .addSubcommand(sub => sub.setName('diagnostics').setDescription('Check host recording support'))
     .addSubcommand(sub => sub.setName('network-test').setDescription('Test host connection to the ESN SMP Bedrock listener'))
-    .addSubcommand(sub => sub.setName('java-test').setDescription('Verify Java entitlement with Microsoft login'))\n    .addSubcommand(sub => sub.setName('java-connect').setDescription('Test Java 26.2 login and spawn on ESN SMP'))
+    .addSubcommand(sub => sub.setName('java-test').setDescription('Verify Java entitlement with Microsoft login'))
+    .addSubcommand(sub => sub.setName('java-connect').setDescription('Test Java 26.2 login and spawn on ESN SMP'))
     .addSubcommand(sub => sub.setName('presets').setDescription('List recording presets and shot counts'))
     .addSubcommand(sub => addPresetOption(
       sub.setName('record').setDescription('Record an advertisement preset')
