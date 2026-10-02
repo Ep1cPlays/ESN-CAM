@@ -204,8 +204,11 @@ def _prepare_retake_source(job: Job, folder: Path) -> tuple[Path, float]:
     if shutil.which("ffmpeg") is None or shutil.which("ffprobe") is None:
         raise RuntimeError("ffmpeg and ffprobe are required for video retake mode.")
 
-    duration = max(1.0, min(float(job.seconds), _probe_duration(source), 30.0))
-    target_frames = _frames(int(max(4, duration)))
+    source_duration = _probe_duration(source)
+    if source_duration < 4.0:
+        raise RuntimeError("Retake source must be at least 4 seconds long.")
+    duration = min(float(job.seconds), source_duration, 30.0)
+    target_frames = _frames(int(duration))
     end_time = (target_frames - 1) / 24.0
     normalized = folder / "retake-source.mp4"
 
@@ -215,7 +218,7 @@ def _prepare_retake_source(job: Job, folder: Path) -> tuple[Path, float]:
             "-vf", "scale=trunc(iw/32)*32:trunc(ih/32)*32,fps=24",
             "-frames:v", str(target_frames),
             "-c:v", "libx264", "-pix_fmt", "yuv420p",
-            "-c:a", "aac", "-shortest",
+            "-an",
             str(normalized),
         ],
         capture_output=True,
