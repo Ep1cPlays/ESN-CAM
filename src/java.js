@@ -27,7 +27,9 @@ async function testJavaAccess(config, onMsaCode) {
 
     const options = {
       host: config.host,
-      username: config.username || 'ESN-JAVA-CAM',
+      // With Microsoft device-code auth this is a cache identifier, not the Minecraft profile name.
+      // Use a fresh identifier for entitlement tests so stale pre-entitlement tokens can never be reused.
+      username: 'ESN-JAVA-CAM-' + Date.now(),
       auth: 'microsoft',
       profilesFolder: config.profilesFolder,
       hideErrors: true,
