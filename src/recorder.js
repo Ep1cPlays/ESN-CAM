@@ -1,0 +1,166 @@
+'use strict'
+
+const fs = require('node:fs')
+const path = require('node:path')
+const { spawnSync } = require('node:child_process')
+const { getPreset } = require('./scenes')
+const { runDiagnostics } = require('./diagnostics')
+
+const wait = ms => new Promise(resolve => setTimeout(resolve, ms))
+
+function safeName(value) {
+  return String(value).replace(/[^a-z0-9-_]/gi, '-').replace(/-+/g, '-').replace(/^-|-$/g, '') || 'shot'
+}
+
+function waitForFile(filePath, timeoutMs) {
+  return new Promise((resolve, reject) => {
+    const started = Date.now()
+    const timer = setInterval(() => {
+      if (fs.existsSync(filePath)) {
+        try {
+          if (fs.statSync(filePath).size > 0) {
+            clearInterval(timer)
+            resolve()
+            return
+          }
+        } catch {}
+      }
+      if (Date.now() - started > timeoutMs) {
+        clearInterval(timer)
+        reject(new Error(`Timed out waiting for renderer output: ${path.basename(filePath)}`))
+      }
+    }, 500)
+  })
+}
+
+class Recorder {
+  constructor(camera, config, fullConfig) {
+    this.camera = camera
+    this.config = config
+    this.fullConfig = fullConfig
+    this.active = false
+    this.lastJob = null
+  }
+
+  getStatus() {
+    return { active: this.active, lastJob: this.lastJob }
+  }
+
+  rendererDiagnostics() {
+    return runDiagnostics(this.fullConfig)
+  }
+
+  assertRendererReady() {
+    const diagnostics = this.rendererDiagnostics()
+    if (!diagnostics.rendererReady) {
+      const missing = []
+      if (!diagnostics.nodeCanvasWebgl) missing.push('node-canvas-webgl')
+      if (!diagnostics.ffmpeg) missing.push('ffmpeg')
+      if (!diagnostics.display && !diagnostics.xvfbRun) missing.push('Xvfb/DISPLAY')
+      throw new Error(`Raven recording renderer is not ready. Missing: ${missing.join(', ') || 'unknown dependency'}. Use /cam diagnostics.`)
+    }
+  }
+
+  async recordPreset(name) {
+    if (this.active) throw new Error('A recording job is already running.')
+    this.assertRendererReady()
+
+    require('node-canvas-webgl')
+    const headless = require('prismarine-viewer').headless
+    const bot = this.camera.requireOnline()
+    const preset = getPreset(name)
+
+    if (preset.shots.length === 0) {
+      throw new Error(`Preset "${name}" has no shots. Stand at a camera position and use /cam shot-add first.`)
+    }
+
+    const jobId = `${safeName(name)}-${new Date().toISOString().replace(/[:.]/g, '-')}`
+    const outputDir = path.join(process.cwd(), this.config.directory, jobId)
+    fs.mkdirSync(outputDir, { recursive: true })
+
+    this.active = true
+    this.lastJob = {
+      id: jobId,
+      preset: name,
+      state: 'recording',
+      outputDir,
+      startedAt: new Date().toISOString()
+    }
+
+    const clips = []
+
+    try {
+      for (let index = 0; index < preset.shots.length; index++) {
+        const shot = preset.shots[index]
+        if (!shot.position) throw new Error(`Shot ${index + 1} is missing a position.`)
+
+        await this.camera.goTo(shot.position, shot.radius || 1)
+        await this.camera.faceShot(shot)
+        await wait(Math.max(0, shot.settleSeconds || 1) * 1000)
+
+        const seconds = Math.max(1, Number(shot.durationSeconds) || 5)
+        const frames = Math.max(1, Math.round(seconds * this.config.fps))
+        const output = path.join(
+          outputDir,
+          `${String(index + 1).padStart(2, '0')}-${safeName(shot.name)}.mp4`
+        )
+
+        headless(bot, {
+          output,
+          frames,
+          width: this.config.width,
+          height: this.config.height,
+          viewDistance: this.config.viewDistance,
+          logFFMPEG: false
+        })
+
+        await wait(seconds * 1000)
+        await waitForFile(output, Math.max(20000, seconds * 4000))
+        clips.push(output)
+      }
+
+      const finalOutput = path.join(outputDir, `${safeName(name)}-ESN-SMP.mp4`)
+      if (clips.length === 1) {
+        fs.copyFileSync(clips[0], finalOutput)
+      } else {
+        const concatFile = path.join(outputDir, 'clips.txt')
+        fs.writeFileSync(
+          concatFile,
+          `${clips.map(file => `file '${file.replace(/'/g, "'\\''")}'`).join('\n')}\n`
+        )
+        const result = spawnSync('ffmpeg', [
+          '-y',
+          '-f', 'concat',
+          '-safe', '0',
+          '-i', concatFile,
+          '-c', 'copy',
+          finalOutput
+        ], { encoding: 'utf8' })
+
+        if (result.status !== 0) {
+          throw new Error(`FFmpeg could not join the clips: ${(result.stderr || '').slice(-500)}`)
+        }
+      }
+
+      this.lastJob = {
+        ...this.lastJob,
+        state: 'complete',
+        finalOutput,
+        completedAt: new Date().toISOString()
+      }
+      return this.lastJob
+    } catch (error) {
+      this.lastJob = {
+        ...this.lastJob,
+        state: 'failed',
+        error: error.message,
+        failedAt: new Date().toISOString()
+      }
+      throw error
+    } finally {
+      this.active = false
+    }
+  }
+}
+
+module.exports = { Recorder }
