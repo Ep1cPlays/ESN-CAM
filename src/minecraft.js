@@ -109,7 +109,9 @@ class MinecraftCamera extends EventEmitter {
       offline: false,
       followPort: false,
       raknetBackend: 'jsp-raknet',
-      useRaknetWorkers: false,
+      useRaknetWorkers: true,
+      connectTimeout: 20000,
+      pingTimeout: 5000,
       conLog: null,
       onMsaCode: data => {
         this.emit('msaCode', data)
@@ -210,6 +212,9 @@ class MinecraftCamera extends EventEmitter {
     client.on('error', error => {
       if (this.client !== client) return
       this.lastError = error?.message || reasonText(error)
+      if (/connect timed out/i.test(this.lastError)) {
+        this.lastError += ` (Bedrock UDP could not reach ${this.config.host}:${this.config.port || 19132})`
+      }
       this.emit('warning', this.lastError)
     })
 
