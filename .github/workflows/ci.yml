@@ -20,3 +20,4 @@ jobs:
           node --check src/recorder.js
           node --check src/discord.js
           node --check src/diagnostics.js
+          node --check src/growth.js
