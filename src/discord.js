@@ -125,7 +125,7 @@ async function createDiscordController(config, camera, recorder, fullConfig) {
     try {
       if (sub === 'start') {
         await interaction.deferReply({ ephemeral: true })
-        if (!camera.config.port) camera.config.port = 17769
+        if (!camera.config.port) camera.config.port = 17429
         await camera.start(async data => {
           const url = data.verification_uri || data.verification_uri_complete || 'https://www.microsoft.com/link'
           const code = data.user_code || data.code || 'Check the Raven console'
@@ -154,7 +154,7 @@ async function createDiscordController(config, camera, recorder, fullConfig) {
 
         await interaction.editReply('Cached Bedrock/Xbox login cleared. Starting a fresh Microsoft sign-in now...')
 
-        if (!camera.config.port) camera.config.port = 17769
+        if (!camera.config.port) camera.config.port = 17429
         await camera.start(async data => {
           const url = data.verification_uri || data.verification_uri_complete || 'https://www.microsoft.com/link'
           const code = data.user_code || data.code || 'Check the Raven console'
