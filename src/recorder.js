@@ -88,7 +88,7 @@ class Recorder {
     }
 
     const jobId = `${safeName(name)}-${new Date().toISOString().replace(/[:.]/g, '-')}`
-    const outputDir = path.join(process.cwd(), this.config.directory, jobId)
+    const outputDir = path.join(__dirname, '..', this.config.directory, jobId)
     fs.mkdirSync(outputDir, { recursive: true })
 
     this.active = true
