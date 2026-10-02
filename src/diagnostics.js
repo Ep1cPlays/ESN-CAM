@@ -25,6 +25,8 @@ function canRequire(name) {
 function runDiagnostics(config) {
   const checks = {
     node: process.version,
+    edition: config.minecraft.edition || 'unknown',
+    bedrockProtocol: canRequire('bedrock-protocol'),
     ffmpeg: commandExists('ffmpeg'),
     xvfbRun: commandExists('xvfb-run', ['--help']),
     nodeCanvasWebgl: canRequire('node-canvas-webgl'),
@@ -47,12 +49,16 @@ function runDiagnostics(config) {
     }
   }
 
-  checks.rendererReady = Boolean(
-    checks.prismarineViewer &&
-    checks.nodeCanvasWebgl &&
-    checks.ffmpeg &&
-    (checks.display || checks.xvfbRun)
-  )
+  if (checks.edition === 'bedrock') {
+    checks.rendererReady = false
+  } else {
+    checks.rendererReady = Boolean(
+      checks.prismarineViewer &&
+      checks.nodeCanvasWebgl &&
+      checks.ffmpeg &&
+      (checks.display || checks.xvfbRun)
+    )
+  }
 
   return checks
 }
