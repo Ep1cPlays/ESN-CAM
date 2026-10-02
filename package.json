@@ -3,10 +3,10 @@
   "version": "2.3.0",
   "private": true,
   "description": "ESN Operator with growth, finance, self-hosted cinematic AI, sales and Minecraft Bedrock tools",
-  "main": "src/index.js",
+  "main": "index.js",
   "type": "commonjs",
   "scripts": {
-    "start": "node src/index.js",
+    "start": "node index.js",
     "check": "node --check src/index.js && node --check src/config.js && node --check src/minecraft.js && node --check src/scenes.js && node --check src/recorder.js && node --check src/discord.js && node --check src/diagnostics.js && node --check src/growth.js && node --check src/finance.js && node --check src/video.js",
     "test": "npm run check"
   },
@@ -17,5 +17,8 @@
     "bedrock-protocol": "3.60.1",
     "discord.js": "14.26.5",
     "dotenv": "17.4.2"
+  },
+  "overrides": {
+    "raknet-native": "npm:jsp-raknet@^2.1.3"
   }
 }
