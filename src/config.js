@@ -72,6 +72,17 @@ module.exports = {
     dataFile: process.env.ESN_FINANCE_DATA_FILE?.trim() || path.join(__dirname, '..', 'data', 'finance.json'),
     maxImportBytes: optionalInt('ESN_FINANCE_IMPORT_MAX_BYTES', 5 * 1024 * 1024)
   },
+  cinematic: {
+    workerUrl: process.env.CINEMATIC_WORKER_URL?.trim() || 'http://127.0.0.1:8765',
+    workerToken: process.env.CINEMATIC_WORKER_TOKEN?.trim() || '',
+    outputDir: process.env.CINEMATIC_LOCAL_OUTPUT_DIR?.trim() || path.join(__dirname, '..', 'cinematic-output'),
+    maxSourceBytes: optionalInt('CINEMATIC_MAX_SOURCE_BYTES', 100 * 1024 * 1024),
+    discordAttachmentBytes: optionalInt('CINEMATIC_DISCORD_ATTACHMENT_BYTES', 24 * 1024 * 1024),
+    defaultSeconds: optionalInt('CINEMATIC_DEFAULT_SECONDS', 8),
+    defaultQuality: process.env.CINEMATIC_DEFAULT_QUALITY?.trim() || 'fast',
+    websiteUrl: process.env.ESN_WEBSITE_URL?.trim() || 'https://esnoffical.com',
+    discordInvite: process.env.ESN_DISCORD_INVITE?.trim() || 'https://discord.gg/3gxA66KZ8'
+  },
   viewer: {
     enabled: optionalBool('VIEWER_ENABLED', false),
     port: optionalInt('VIEWER_PORT', 3000)
