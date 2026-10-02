@@ -58,6 +58,16 @@ module.exports = {
     title: process.env.AD_TITLE?.trim() || 'ESN SMP',
     subtitle: process.env.AD_SUBTITLE?.trim() || 'esn.ggwp.cc | JAVA + BEDROCK'
   },
+  growth: {
+    dataFile: process.env.GROWTH_DATA_FILE?.trim() || path.join(__dirname, '..', 'data', 'growth.json'),
+    saleCommissionPercent: optionalInt('GROWTH_SALE_COMMISSION_PERCENT', 50),
+    invitesPerReward: optionalInt('GROWTH_INVITES_PER_REWARD', 10),
+    inviteRewardDollars: optionalInt('GROWTH_INVITE_REWARD_DOLLARS', 5),
+    websiteUrl: process.env.ESN_WEBSITE_URL?.trim() || 'https://esnoffical.com',
+    discordInvite: process.env.ESN_DISCORD_INVITE?.trim() || 'https://discord.gg/3gxA66KZ8',
+    guardianInvite: process.env.ESN_GUARDIAN_INVITE?.trim() || 'https://discord.com/oauth2/authorize?client_id=1544503232674664573',
+    smpBedrockPort: optionalInt('MC_PORT', 17429)
+  },
   viewer: {
     enabled: optionalBool('VIEWER_ENABLED', false),
     port: optionalInt('VIEWER_PORT', 3000)
