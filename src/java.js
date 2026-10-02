@@ -1,6 +1,6 @@
 'use strict'
 
-const { Authflow } = require('prismarine-auth')
+const { Authflow, Titles } = require('prismarine-auth')
 
 async function testJavaAccess(config, onMsaCode, onStage) {
   const stage = (name, detail = '') => {
@@ -10,7 +10,7 @@ async function testJavaAccess(config, onMsaCode, onStage) {
 
   stage('START', 'Java entitlement/profile test (server protocol independent)')
   const cacheId = 'ESN-JAVA-CAM-' + Date.now()
-  const flow = new Authflow(cacheId, config.profilesFolder, { flow: 'live', authTitle: 'ESN CAM', forceRefresh: true }, data => {
+  const flow = new Authflow(cacheId, config.profilesFolder, { flow: 'live', authTitle: Titles.MinecraftJava, deviceType: 'Win32', forceRefresh: true }, data => {
     stage('MICROSOFT_DEVICE_CODE', 'waiting for user authorization')
     if (typeof onMsaCode === 'function') Promise.resolve(onMsaCode(data)).catch(() => {})
   })
