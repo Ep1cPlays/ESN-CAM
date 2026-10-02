@@ -36,6 +36,7 @@ function commandDefinition() {
     .addSubcommand(sub => sub.setName('switch-account').setDescription('Clear cached Microsoft login and sign in with a different account'))
     .addSubcommand(sub => sub.setName('status').setDescription('Show ESN CAM status'))
     .addSubcommand(sub => sub.setName('diagnostics').setDescription('Check Raven recording support'))
+    .addSubcommand(sub => sub.setName('network-test').setDescription('Test Raven connection to the ESN SMP Bedrock listener'))
     .addSubcommand(sub => sub.setName('presets').setDescription('List recording presets and shot counts'))
     .addSubcommand(sub => addPresetOption(
       sub.setName('record').setDescription('Record an advertisement preset')
@@ -183,6 +184,33 @@ async function createDiscordController(config, camera, recorder, fullConfig) {
             (mc.lastError ? `\n**Last error:** ${mc.lastError}` : ''),
           ephemeral: true
         })
+        return
+      }
+
+      if (sub === 'network-test') {
+        await interaction.deferReply({ ephemeral: true })
+        const result = await camera.testConnection()
+        if (result.ok) {
+          await interaction.editReply(
+            `**Bedrock network test: PASS**\n` +
+            `Host: ${result.host}\n` +
+            `Resolved IP: ${result.resolvedHost}\n` +
+            `Port: ${result.port}/UDP\n` +
+            `Latency: ${result.latencyMs} ms\n` +
+            `MOTD: ${result.motd}\n` +
+            `Version: ${result.version}\n` +
+            `Players: ${result.players}`
+          )
+        } else {
+          await interaction.editReply(
+            `**Bedrock network test: FAIL**\n` +
+            `Host: ${result.host}\n` +
+            `Resolved IP: ${result.resolvedHost}\n` +
+            `Port: ${result.port}/UDP\n` +
+            `Waited: ${result.latencyMs} ms\n` +
+            `Error: ${result.error}`
+          )
+        }
         return
       }
 
