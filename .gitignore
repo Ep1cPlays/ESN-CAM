@@ -1,0 +1,6 @@
+node_modules/
+.env
+auth/
+recordings/
+*.log
+.DS_Store
