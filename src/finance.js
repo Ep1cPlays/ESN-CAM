@@ -3,6 +3,7 @@
 const fs = require('node:fs')
 const path = require('node:path')
 const { SlashCommandBuilder } = require('discord.js')
+const { searchWeb } = require('./research')
 
 function money(value) {
   return '$' + Number(value || 0).toFixed(2)
@@ -268,6 +269,9 @@ function commandDefinition() {
       .addStringOption(option => option.setName('decision').setDescription('Approve or deny').setRequired(true)
         .addChoices({ name: 'Approve', value: 'approve' }, { name: 'Deny', value: 'deny' })))
     .addSubcommand(sub => sub.setName('purchases').setDescription('Show recent purchase requests'))
+    .addSubcommand(sub => sub.setName('web-search').setDescription('Search the public web for something ESN needs')
+      .addStringOption(option => option.setName('query').setDescription('What to find for ESN').setRequired(true).setMaxLength(300))
+      .addIntegerOption(option => option.setName('results').setDescription('Number of results').setRequired(false).setMinValue(1).setMaxValue(5)))
     .addSubcommand(sub => sub.setName('lockdown').setDescription('Owner-only purchasing lock')
       .addStringOption(option => option.setName('mode').setDescription('Lock on or off').setRequired(true)
         .addChoices({ name: 'ON', value: 'on' }, { name: 'OFF', value: 'off' })))
@@ -407,6 +411,33 @@ function createFinanceManager(config, discordConfig) {
       store.data.purchaseRequests.push(purchase)
       store.save()
 
+      let ownerDm = 'sent'
+      if (!discordConfig.ownerUserId) {
+        ownerDm = 'not configured'
+      } else {
+        try {
+          const owner = await interaction.client.users.fetch(discordConfig.ownerUserId)
+          const guildName = interaction.guild?.name || 'Direct message / unknown server'
+          await owner.send({
+            content:
+              '**NEW ESN PURCHASE REQUEST — ' + purchase.id + '**\n' +
+              'Item: **' + purchase.item + '**\n' +
+              'Vendor: **' + purchase.vendor + '**\n' +
+              'Expected total: **' + money(purchase.amount) + '**\n' +
+              'Requested by: **' + interaction.user.username + '** (' + interaction.user.id + ')\n' +
+              'Server: **' + guildName + '**\n' +
+              (purchase.checkoutUrl ? 'Checkout: <' + purchase.checkoutUrl + '>\n' : '') +
+              '\nReview it with /esn purchase-review using ID **' + purchase.id + '**.',
+            allowedMentions: { parse: [] }
+          })
+        } catch (error) {
+          ownerDm = 'failed'
+          purchase.ownerDmError = String(error?.message || error).slice(0, 300)
+          purchase.ownerDmFailedAt = new Date().toISOString()
+          store.save()
+        }
+      }
+
       await interaction.reply({
         content:
           '**ESN Purchase Request ' + purchase.id + '**\n' +
@@ -414,7 +445,8 @@ function createFinanceManager(config, discordConfig) {
           'Vendor: **' + purchase.vendor + '**\n' +
           'Expected total: **' + money(purchase.amount) + '**\n' +
           (purchase.checkoutUrl ? 'Checkout: <' + purchase.checkoutUrl + '>\n' : '') +
-          'Status: **PENDING OWNER APPROVAL**\n\n' +
+          'Status: **PENDING OWNER APPROVAL**\n' +
+          'Owner DM: **' + ownerDm.toUpperCase() + '**\n\n' +
           'No Cash App login, PIN, CVV, or full card number is stored by ESN Operator.',
         ephemeral: true,
         allowedMentions: { parse: [] }
@@ -459,6 +491,30 @@ function createFinanceManager(config, discordConfig) {
       return
     }
 
+    if (sub === 'web-search') {
+      const query = interaction.options.getString('query', true)
+      const count = interaction.options.getInteger('results') || 5
+
+      await interaction.deferReply({ ephemeral: true })
+      const result = await searchWeb(query, count)
+      const lines = result.results.map((item, index) => {
+        const snippet = item.snippet ? '\n' + item.snippet : ''
+        return '**' + (index + 1) + '. ' + item.title + '**\n<' + item.url + '>' + snippet
+      })
+
+      const header = '**ESN Web Search**\nQuery: **' + query + '**\nProvider: **' + result.provider + '**\n\n'
+      let body = header
+      for (const line of lines) {
+        if ((body + line + '\n\n').length > 1900) break
+        body += line + '\n\n'
+      }
+
+      await interaction.editReply({
+        content: body.trim(),
+        allowedMentions: { parse: [] }
+      })
+      return
+    }
     if (sub === 'lockdown') {
       requireOwner(interaction, discordConfig)
       store.data.lockdown = interaction.options.getString('mode', true) === 'on'
