@@ -64,6 +64,24 @@ function commandDefinition() {
   }
 
   command.addSubcommand(sub => sub
+    .setName('animate')
+    .setDescription('Animate an image with ESN Cinematic AI')
+    .addAttachmentOption(option => option.setName('image').setDescription('PNG/JPG/WebP reference image').setRequired(true))
+    .addStringOption(option => option.setName('prompt').setDescription('How the image should move or transform').setRequired(true).setMaxLength(1200))
+    .addStringOption(option => option.setName('style').setDescription('Visual direction').setRequired(false).addChoices(...STYLE_CHOICES))
+    .addStringOption(option => option.setName('format').setDescription('Video format').setRequired(false).addChoices(...FORMAT_CHOICES))
+    .addIntegerOption(option => option.setName('seconds').setDescription('Clip length').setRequired(false).setMinValue(4).setMaxValue(30))
+    .addStringOption(option => option.setName('quality').setDescription('Generation quality').setRequired(false)
+      .addChoices({ name: 'Fast', value: 'fast' }, { name: 'Production', value: 'production' })))
+
+  command.addSubcommand(sub => sub
+    .setName('retake')
+    .setDescription('AI-remix uploaded gameplay or CAM footage')
+    .addAttachmentOption(option => option.setName('video').setDescription('MP4/MOV/WebM/MKV source footage').setRequired(true))
+    .addStringOption(option => option.setName('prompt').setDescription('Describe the cinematic result').setRequired(true).setMaxLength(1200))
+    .addIntegerOption(option => option.setName('seconds').setDescription('Seconds from the start to remix').setRequired(false).setMinValue(4).setMaxValue(30)))
+
+  command.addSubcommand(sub => sub
     .setName('product')
     .setDescription('Generate a cinematic ad for an ESN product or exclusive')
     .addStringOption(option => option.setName('name').setDescription('Product name').setRequired(true).setMaxLength(120))
@@ -135,6 +153,30 @@ class CinematicWorkerClient {
     })
     if (!response.ok) throw new Error('Cinematic worker returned HTTP ' + response.status)
     return response.json()
+  }
+
+  async uploadAsset(attachment) {
+    if (attachment.size > this.config.maxSourceBytes) throw new Error('Attachment exceeds the configured upload limit.')
+    const source = await fetch(attachment.url, { signal: AbortSignal.timeout(30000) })
+    if (!source.ok) throw new Error('Could not download the Discord attachment.')
+    const bytes = Buffer.from(await source.arrayBuffer())
+    if (bytes.length > this.config.maxSourceBytes) throw new Error('Attachment exceeded the configured upload limit.')
+
+    const headers = {}
+    if (this.config.workerToken) headers.authorization = 'Bearer ' + this.config.workerToken
+    headers['content-type'] = attachment.contentType || 'application/octet-stream'
+    headers['x-filename'] = attachment.name || 'asset.bin'
+    headers['content-length'] = String(bytes.length)
+
+    const response = await fetch(this.config.workerUrl.replace(/\/$/, '') + '/v1/assets', {
+      method: 'POST',
+      headers,
+      body: bytes,
+      signal: AbortSignal.timeout(120000)
+    })
+    const body = await response.json().catch(() => ({}))
+    if (!response.ok) throw new Error(body.error || 'Cinematic worker asset upload failed.')
+    return body
   }
 
   async submit(payload) {
@@ -320,6 +362,63 @@ function createVideoManager(config) {
 
     if (PRESETS[sub]) {
       await submitPreset(interaction, sub, PRESETS[sub].prompt)
+      return
+    }
+
+    if (sub === 'animate') {
+      const attachment = interaction.options.getAttachment('image', true)
+      const userPrompt = interaction.options.getString('prompt', true)
+      const format = interaction.options.getString('format') || '9:16'
+      const seconds = interaction.options.getInteger('seconds') || config.defaultSeconds
+      const quality = interaction.options.getString('quality') || config.defaultQuality
+      const style = interaction.options.getString('style') || 'esn-cinematic'
+
+      await interaction.deferReply({ ephemeral: true })
+      const asset = await worker.uploadAsset(attachment)
+      const prompt = [
+        userPrompt,
+        stylePrompt(style),
+        brandPrompt(config),
+        'Preserve the recognizable subject and composition from the reference image while creating convincing cinematic motion.'
+      ].join(' ')
+      const job = await worker.submit({
+        prompt,
+        preset: 'image-animation',
+        mode: 'image',
+        asset_id: asset.id,
+        format,
+        seconds,
+        quality,
+        requested_by: interaction.user.id
+      })
+      await interaction.editReply('**Image-to-video submitted.**\nJob: ' + job.id + '\nUse /video job with ID ' + job.id + ' to check it.')
+      return
+    }
+
+    if (sub === 'retake') {
+      const attachment = interaction.options.getAttachment('video', true)
+      const userPrompt = interaction.options.getString('prompt', true)
+      const seconds = interaction.options.getInteger('seconds') || Math.min(12, config.defaultSeconds)
+
+      await interaction.deferReply({ ephemeral: true })
+      const asset = await worker.uploadAsset(attachment)
+      const prompt = [
+        userPrompt,
+        stylePrompt('esn-cinematic'),
+        brandPrompt(config),
+        'Use the uploaded gameplay or CAM footage as motion/context and remake the selected segment with polished cinematic direction.'
+      ].join(' ')
+      const job = await worker.submit({
+        prompt,
+        preset: 'cam-retake',
+        mode: 'retake',
+        asset_id: asset.id,
+        format: '16:9',
+        seconds,
+        quality: 'fast',
+        requested_by: interaction.user.id
+      })
+      await interaction.editReply('**AI CAM/gameplay retake submitted.**\nJob: ' + job.id + '\nUse /video job with ID ' + job.id + ' to check it.')
       return
     }
 
