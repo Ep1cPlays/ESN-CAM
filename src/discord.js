@@ -114,8 +114,15 @@ async function createDiscordController(config, camera, recorder, fullConfig) {
     try {
       if (sub === 'start') {
         await interaction.deferReply({ ephemeral: true })
-        await camera.start()
-        await interaction.editReply('ESN CAM is connecting to **esn.ggwp.cc**.')
+        await camera.start(async data => {
+          const url = data.verification_uri || data.verification_uri_complete || 'https://www.microsoft.com/link'
+          const code = data.user_code || data.code || 'Check the Raven console'
+          await interaction.followUp({
+            content: `**Microsoft login required**\nOpen: ${url}\nCode: **${code}**\nAfter you approve it, ESN CAM will continue connecting automatically.`,
+            ephemeral: true
+          }).catch(() => {})
+        })
+        await interaction.editReply('ESN CAM is connecting to **esn.ggwp.cc**. If Microsoft needs authorization, I will send the login code here.')
         return
       }
 
