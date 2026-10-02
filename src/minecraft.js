@@ -82,6 +82,43 @@ class MinecraftCamera extends EventEmitter {
     this.lastMsaCallback = null
   }
 
+  async testConnection() {
+    const resolvedHost = await resolveHost(this.config.host)
+    const port = this.config.port || 19132
+    const started = Date.now()
+
+    try {
+      const result = await bedrock.ping({
+        transport: 'raknet',
+        host: resolvedHost,
+        port,
+        timeout: 5000,
+        raknetBackend: 'jsp-raknet',
+        useRaknetWorkers: true
+      })
+
+      return {
+        ok: true,
+        host: this.config.host,
+        resolvedHost,
+        port,
+        latencyMs: Date.now() - started,
+        motd: result?.motd || result?.name || 'unknown',
+        version: result?.version || 'unknown',
+        players: Number.isFinite(result?.playersOnline) ? `${result.playersOnline}/${result.playersMax}` : 'unknown'
+      }
+    } catch (error) {
+      return {
+        ok: false,
+        host: this.config.host,
+        resolvedHost,
+        port,
+        latencyMs: Date.now() - started,
+        error: error?.message || String(error)
+      }
+    }
+  }
+
   async start(onMsaCode) {
     if (!this.config.username) throw new Error('MC_USERNAME is not set on Raven.')
     if (this.client && ['connecting', 'joining', 'online'].includes(this.state)) return
