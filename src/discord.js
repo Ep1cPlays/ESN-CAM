@@ -62,6 +62,12 @@ function commandDefinition() {
       .addNumberOption(option => option.setName('x').setDescription('X').setRequired(true))
       .addNumberOption(option => option.setName('y').setDescription('Y').setRequired(true))
       .addNumberOption(option => option.setName('z').setDescription('Z').setRequired(true)))
+    .addSubcommand(sub => sub
+      .setName('look')
+      .setDescription('Aim ESN CAM at coordinates')
+      .addNumberOption(option => option.setName('x').setDescription('Target X').setRequired(true))
+      .addNumberOption(option => option.setName('y').setDescription('Target Y').setRequired(true))
+      .addNumberOption(option => option.setName('z').setDescription('Target Z').setRequired(true)))
 }
 
 function isAuthorized(interaction, config) {
@@ -180,6 +186,15 @@ async function createDiscordController(config, camera, recorder, fullConfig) {
         const z = interaction.options.getNumber('z', true)
         await camera.goTo({ x, y, z }, 1)
         await interaction.editReply(`ESN CAM reached **${x}, ${y}, ${z}**.`)
+        return
+      }
+
+      if (sub === 'look') {
+        const x = interaction.options.getNumber('x', true)
+        const y = interaction.options.getNumber('y', true)
+        const z = interaction.options.getNumber('z', true)
+        await camera.lookAt({ x, y, z })
+        await interaction.reply({ content: `ESN CAM is now aimed at **${x}, ${y}, ${z}**.`, ephemeral: true })
         return
       }
 
