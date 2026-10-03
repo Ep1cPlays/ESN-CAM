@@ -96,6 +96,11 @@ async function testJavaConnection(config, onMsaCode, onStage) {
     username: profile.name,
     version: '26.2',
     session: {
+      // node-minecraft-protocol's authenticated-session path expects the
+      // launcher-style session shape. A stable clientToken is required so
+      // session validation/joinServer runs instead of behaving like an
+      // unverified/offline username.
+      clientToken: profile.id,
       accessToken: authResult.token,
       selectedProfile: { name: profile.name, id: profile.id }
     }
