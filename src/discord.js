@@ -331,11 +331,13 @@ async function createDiscordController(config, camera, recorder, fullConfig) {
             `**Minecraft edition:** ${d.edition}\n` +
             `**Bedrock protocol:** ${statusLine(d.bedrockProtocol)}\n` +
             `**Host video renderer ready:** ${statusLine(d.rendererReady)}\n` +
-            `Node: ${d.node}\n` +
-            `FFmpeg: ${statusLine(d.ffmpeg)}\n` +
-            `node-canvas-webgl: ${statusLine(d.nodeCanvasWebgl)}\n` +
-            `Xvfb or DISPLAY: ${statusLine(d.xvfbRun || d.display)}\n` +
+            `**Java viewer components**\n` +
             `Prismarine Viewer: ${statusLine(d.prismarineViewer)}\n` +
+            `node-canvas-webgl: ${statusLine(d.nodeCanvasWebgl)}\n` +
+            `Xvfb: ${statusLine(d.xvfbRun)}\n` +
+            `DISPLAY: ${statusLine(d.display)}\n` +
+            `FFmpeg: ${statusLine(d.ffmpeg)}\n` +
+            `Node: ${d.node}\n` +
             `Writable auth storage: ${statusLine(d.authDirectoryWritable)}\n` +
             `Writable recordings storage: ${statusLine(d.recordingsDirectoryWritable)}`,
           ephemeral: true
