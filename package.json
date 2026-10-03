@@ -1,6 +1,6 @@
 {
   "name": "esn-cam",
-  "version": "2.7.1",
+  "version": "2.7.2",
   "private": true,
   "description": "ESN Operator with Bedrock CAM, Java entitlement testing, growth, finance and cinematic tools",
   "main": "index.js",
@@ -11,7 +11,7 @@
     "test": "npm run check"
   },
   "engines": {
-    "node": ">=24"
+    "node": ">=22"
   },
   "dependencies": {
     "bedrock-protocol": "3.60.1",
