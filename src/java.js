@@ -98,8 +98,7 @@ async function testJavaConnection(config, onMsaCode, onStage) {
     session: {
       accessToken: authResult.token,
       selectedProfile: { name: profile.name, id: profile.id }
-    },
-    skipValidation: true
+    }
   }
   // Important: when no Java port is configured, omit it entirely so
   // node-minecraft-protocol can follow the server's Minecraft SRV record.
