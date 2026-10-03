@@ -6,6 +6,40 @@ const { Authflow, Titles } = require('prismarine-auth')
 
 const wait = ms => new Promise(resolve => setTimeout(resolve, ms))
 
+
+function installMineflayer262TeamCompat(stage) {
+  try {
+    const mineflayerEntry = require.resolve('mineflayer')
+    const teamModule = require.resolve(path.join(path.dirname(mineflayerEntry), 'lib', 'team.js'))
+    const originalLoader = require(teamModule)
+
+    if (originalLoader.__esnSafe262) return
+
+    const safeLoader = registry => {
+      const Team = originalLoader(registry)
+      const originalParseMessage = Team.prototype.parseMessage
+
+      Team.prototype.parseMessage = function (value) {
+        // Minecraft 26.2 may omit scoreboard-team display/prefix/suffix
+        // components. The current Mineflayer fork passes undefined into
+        // prismarine-chat, which crashes while reading msg.type.
+        if (value === undefined || value === null) {
+          return originalParseMessage.call(this, '')
+        }
+        return originalParseMessage.call(this, value)
+      }
+
+      return Team
+    }
+
+    safeLoader.__esnSafe262 = true
+    require.cache[teamModule].exports = safeLoader
+    stage('COMPAT', 'installed safe Minecraft 26.2 team component parser')
+  } catch (error) {
+    stage('COMPAT_WARN', 'could not install team parser guard: ' + (error?.message || error))
+  }
+}
+
 function waitForStableFile(filePath, timeoutMs = 45000) {
   return new Promise((resolve, reject) => {
     const started = Date.now()
@@ -63,6 +97,7 @@ async function testJavaRender(config, onMsaCode, onStage) {
     throw new Error('Java render test could not obtain the working Minecraft Java profile/token.')
   }
 
+  installMineflayer262TeamCompat(stage)
   const mineflayer = require('mineflayer')
   const session = {
     accessToken: authResult.token,
