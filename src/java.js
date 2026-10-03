@@ -91,19 +91,32 @@ async function testJavaConnection(config, onMsaCode, onStage) {
   stage('JAVA_PROFILE', `reusing authenticated profile ${profile.name}`)
 
   const mineflayer = require('mineflayer')
+  const session = {
+    accessToken: authResult.token,
+    selectedProfile: profile,
+    availableProfile: [profile]
+  }
+
+  // Use minecraft-protocol's supported custom-auth hook and mirror its own
+  // Microsoft authenticator. This is important: simply passing a session
+  // object can route through the legacy session-validation path. Setting
+  // options.accessToken + haveCredentials is what the encrypted online-mode
+  // handshake uses when it calls Minecraft's join-server service.
+  const authenticatedJava = (client, options) => {
+    client.session = session
+    client.username = profile.name
+    options.username = profile.name
+    options.accessToken = authResult.token
+    options.haveCredentials = true
+    client.emit('session', session)
+    options.connect(client)
+  }
+
   const options = {
     host: config.host,
     username: profile.name,
-    version: '26.2',
-    session: {
-      // node-minecraft-protocol's authenticated-session path expects the
-      // launcher-style session shape. A stable clientToken is required so
-      // session validation/joinServer runs instead of behaving like an
-      // unverified/offline username.
-      clientToken: profile.id,
-      accessToken: authResult.token,
-      selectedProfile: { name: profile.name, id: profile.id }
-    }
+    auth: authenticatedJava,
+    version: '26.2'
   }
   // Important: when no Java port is configured, omit it entirely so
   // node-minecraft-protocol can follow the server's Minecraft SRV record.
