@@ -93,6 +93,17 @@ async function testJavaRender(config, onMsaCode, onStage) {
     stage('CONNECT', `joining ${config.host}`)
     bot = mineflayer.createBot(botOptions)
 
+    // Minecraft 26.2 can send scoreboard-team components that this Mineflayer
+    // fork does not parse safely yet. The render worker does not use team
+    // metadata, so disable only those packet handlers before packets arrive.
+    for (const packetName of ['scoreboard_team', 'teams']) {
+      const count = bot?._client?.listenerCount(packetName) || 0
+      if (count > 0) {
+        bot._client.removeAllListeners(packetName)
+        stage('COMPAT', `disabled ${packetName} handler (${count}) for render mode`)
+      }
+    }
+
     await new Promise((resolve, reject) => {
       let settled = false
       const timer = setTimeout(() => finish(new Error('Java render test timed out before spawn.')), 45000)
