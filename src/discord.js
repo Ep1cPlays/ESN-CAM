@@ -14,6 +14,7 @@ const { createGrowthManager } = require('./growth')
 const { createFinanceManager } = require('./finance')
 const { createVideoManager } = require('./video')
 const { testJavaAccess, testJavaConnection } = require('./java')
+const { testJavaRender } = require('./java-render')
 
 const PRESET_CHOICES = [
   { name: 'Full Advertisement', value: 'full-ad' },
@@ -43,6 +44,7 @@ function commandDefinition() {
     .addSubcommand(sub => sub.setName('network-test').setDescription('Test host connection to the ESN SMP Bedrock listener'))
     .addSubcommand(sub => sub.setName('java-test').setDescription('Verify Java entitlement with Microsoft login'))
     .addSubcommand(sub => sub.setName('java-connect').setDescription('Test Java 26.2 login and spawn on ESN SMP'))
+    .addSubcommand(sub => sub.setName('java-render-test').setDescription('Render a short real Java CAM clip from ESN SMP'))
     .addSubcommand(sub => sub.setName('presets').setDescription('List recording presets and shot counts'))
     .addSubcommand(sub => addPresetOption(
       sub.setName('record').setDescription('Record an advertisement preset')
@@ -294,6 +296,38 @@ async function createDiscordController(config, camera, recorder, fullConfig) {
           'Version: **' + result.version + '**\\n' +
           'Server: **' + result.host + ':' + result.port + '**' + pos
         )
+        return
+      }
+
+      if (sub === 'java-render-test') {
+        await interaction.deferReply({ ephemeral: true })
+        await interaction.editReply('Joining ESN SMP with the Java CAM and attempting a short real render now...')
+
+        const result = await testJavaRender(fullConfig.java, async data => {
+          const url = data.verification_uri || data.verification_uri_complete || 'https://www.microsoft.com/link'
+          const code = data.user_code || data.code || 'Check the host console'
+          await interaction.followUp({
+            content: '**Java Microsoft login required**\nOpen: ' + url + '\nCode: **' + code + '**',
+            ephemeral: true
+          }).catch(() => {})
+        })
+
+        const size = fs.statSync(result.output).size
+        const discordLimit = 24 * 1024 * 1024
+        if (size <= discordLimit) {
+          await interaction.editReply({
+            content:
+              '**JAVA RENDER TEST: PASS**\n' +
+              'Account: **' + result.username + '**\n' +
+              'Version: **' + result.version + '**\n' +
+              'Real Minecraft render attached.',
+            files: [new AttachmentBuilder(result.output)]
+          })
+        } else {
+          await interaction.editReply(
+            '**JAVA RENDER TEST: PASS**\nRendered successfully, but the MP4 is too large to attach. Saved as: `' + result.output + '`'
+          )
+        }
         return
       }
 
