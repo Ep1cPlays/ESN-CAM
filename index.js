@@ -67,7 +67,9 @@ const viewerPackage = {
     'prismarine-viewer': '1.33.0',
     'node-canvas-webgl': '0.3.0',
     'canvas': '3.2.3',
-    'gl': '8.1.6'
+    'gl': '8.1.6',
+    'puppeteer-core': '25.11.0',
+    '@sparticuz/chromium': '153.0.0'
   }
 }
 fs.writeFileSync(path.join(VIEWER_DIR, 'package.json'), JSON.stringify(viewerPackage, null, 2))
