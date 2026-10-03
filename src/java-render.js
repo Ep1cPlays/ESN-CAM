@@ -2,9 +2,29 @@
 
 const fs = require('node:fs')
 const path = require('node:path')
+const net = require('node:net')
+const { spawnSync } = require('node:child_process')
 const { Authflow, Titles } = require('prismarine-auth')
 
 const wait = ms => new Promise(resolve => setTimeout(resolve, ms))
+
+function getFreePort() {
+  return new Promise((resolve, reject) => {
+    const server = net.createServer()
+    server.unref()
+    server.once('error', reject)
+    server.listen(0, '127.0.0.1', () => {
+      const address = server.address()
+      const port = typeof address === 'object' && address ? address.port : null
+      server.close(error => {
+        if (error) reject(error)
+        else if (!port) reject(new Error('Could not allocate a local viewer port.'))
+        else resolve(port)
+      })
+    })
+  })
+}
+
 
 
 function installMineflayer262TeamCompat(stage) {
@@ -124,6 +144,9 @@ async function testJavaRender(config, onMsaCode, onStage) {
   if (config.port) botOptions.port = config.port
 
   let bot
+  let browser
+  let originalBotVersion
+  let viewerStarted = false
   try {
     stage('CONNECT', `joining ${config.host}`)
     bot = mineflayer.createBot(botOptions)
@@ -173,43 +196,152 @@ async function testJavaRender(config, onMsaCode, onStage) {
     stage('SPAWN', `joined as ${bot.username || profile.name}`)
     await wait(2500)
 
-    stage('RENDERER', 'starting Prismarine Viewer headless smoke test')
-    require('node-canvas-webgl')
-    const viewer = require('prismarine-viewer')
-    if (typeof viewer.headless !== 'function') {
-      throw new Error('Prismarine Viewer loaded, but its headless renderer is unavailable.')
+    stage('RENDERER', 'starting Chromium + SwiftShader browser renderer')
+
+    const prismarineViewer = require('prismarine-viewer')
+    const puppeteer = require('puppeteer-core')
+    const chromiumModule = require('@sparticuz/chromium')
+    const chromium = chromiumModule.default || chromiumModule
+
+    // Prismarine Viewer 1.33.0 has 26.1 rendering assets. The ESN SMP
+    // protocol client remains 26.2; only the browser viewer is told to use
+    // the compatible 26.1 asset set.
+    originalBotVersion = bot.version
+    if (bot.version === '26.2') {
+      bot.version = '26.1'
+      stage('VIEWER_ASSETS', 'using 26.1 viewer assets for the 26.2 world stream')
     }
 
-    const outputDir = path.join(__dirname, '..', 'recordings', 'java-render-tests')
-    fs.mkdirSync(outputDir, { recursive: true })
-    const output = path.join(outputDir, `java-render-${Date.now()}.mp4`)
+    const viewerPort = await getFreePort()
+    prismarineViewer.mineflayer(bot, {
+      port: viewerPort,
+      firstPerson: true,
+      viewDistance: 6
+    })
+    viewerStarted = true
+    await wait(750)
 
-    const maybePromise = viewer.headless(bot, {
-      output,
-      frames: 60,
-      width: 640,
-      height: 360,
-      viewDistance: 6,
-      logFFMPEG: true
+    chromium.setGraphicsMode = true
+    const executablePath = await chromium.executablePath()
+    const chromiumArgs = [
+      ...chromium.args,
+      '--enable-webgl',
+      '--ignore-gpu-blocklist',
+      '--enable-unsafe-swiftshader',
+      '--use-gl=angle',
+      '--use-angle=swiftshader',
+      '--disable-dev-shm-usage'
+    ]
+
+    const args = await puppeteer.defaultArgs({
+      args: chromiumArgs,
+      headless: 'shell'
     })
 
-    if (maybePromise && typeof maybePromise.then === 'function') {
-      await maybePromise
+    stage('BROWSER', 'launching headless Chromium with SwiftShader')
+    browser = await puppeteer.launch({
+      args,
+      defaultViewport: {
+        width: 640,
+        height: 360,
+        deviceScaleFactor: 1,
+        isMobile: false,
+        hasTouch: false,
+        isLandscape: true
+      },
+      executablePath,
+      headless: 'shell'
+    })
+
+    const page = await browser.newPage()
+    page.on('pageerror', error => {
+      stage('PAGE_ERROR', String(error?.message || error).slice(0, 500))
+    })
+    page.on('console', message => {
+      const type = message.type()
+      if (type === 'error' || type === 'warning') {
+        stage('BROWSER_' + type.toUpperCase(), message.text().slice(0, 500))
+      }
+    })
+
+    await page.goto('http://127.0.0.1:' + viewerPort + '/', {
+      waitUntil: 'domcontentloaded',
+      timeout: 30000
+    })
+    await page.waitForSelector('canvas', { timeout: 20000 })
+    await wait(6000)
+
+    const webgl = await page.evaluate(() => {
+      const canvas = document.querySelector('canvas')
+      if (!canvas) return { ok: false, reason: 'canvas missing' }
+      const gl = canvas.getContext('webgl2') || canvas.getContext('webgl') || canvas.getContext('experimental-webgl')
+      if (!gl) return { ok: false, reason: 'WebGL context missing' }
+      let renderer = 'unknown'
+      try {
+        const ext = gl.getExtension('WEBGL_debug_renderer_info')
+        renderer = ext ? gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER)
+      } catch {}
+      return { ok: true, renderer, width: canvas.width, height: canvas.height }
+    })
+
+    if (!webgl.ok) {
+      throw new Error('Chromium launched, but SwiftShader WebGL was unavailable: ' + (webgl.reason || 'unknown'))
+    }
+    stage('WEBGL', 'ready via ' + webgl.renderer)
+
+    const outputDir = path.join(__dirname, '..', 'recordings', 'java-render-tests')
+    const frameDir = path.join(outputDir, 'frames-' + Date.now())
+    fs.mkdirSync(frameDir, { recursive: true })
+    const output = path.join(outputDir, 'java-render-' + Date.now() + '.mp4')
+
+    const frames = 40
+    const fps = 10
+    stage('CAPTURE', 'capturing ' + frames + ' real Minecraft frames')
+
+    const canvas = await page.$('canvas')
+    if (!canvas) throw new Error('Viewer canvas disappeared before capture.')
+
+    for (let i = 0; i < frames; i++) {
+      const framePath = path.join(frameDir, 'frame-' + String(i).padStart(4, '0') + '.png')
+      await canvas.screenshot({ path: framePath, type: 'png' })
+      await wait(100)
     }
 
-    const size = await waitForStableFile(output, 45000)
-    stage('PASS', `rendered ${size} bytes`)
+    const ffmpeg = spawnSync('ffmpeg', [
+      '-y',
+      '-framerate', String(fps),
+      '-i', path.join(frameDir, 'frame-%04d.png'),
+      '-c:v', 'libx264',
+      '-preset', 'veryfast',
+      '-crf', '20',
+      '-pix_fmt', 'yuv420p',
+      '-movflags', '+faststart',
+      output
+    ], { encoding: 'utf8', maxBuffer: 8 * 1024 * 1024 })
+
+    if (ffmpeg.status !== 0 || !fs.existsSync(output)) {
+      throw new Error('FFmpeg could not encode the Chromium render: ' + String(ffmpeg.stderr || '').slice(-900))
+    }
+
+    const size = fs.statSync(output).size
+    if (size < 1024) throw new Error('Chromium render produced an empty MP4.')
+
+    stage('PASS', 'browser-rendered ' + size + ' bytes')
 
     return {
       ok: true,
       username: bot.username || profile.name,
-      version: bot.version || '26.2',
+      version: originalBotVersion || bot.version || '26.2',
       host: config.host,
       port: config.port || 'SRV/default',
       output,
-      size
+      size,
+      renderer: webgl.renderer
     }
   } finally {
+    try { await browser?.close() } catch {}
+    try { if (viewerStarted) bot?.viewer?.close?.() } catch {}
+    try { if (bot && originalBotVersion) bot.version = originalBotVersion } catch {}
     try { bot?.quit('ESN CAM render test complete') } catch {}
   }
 }
